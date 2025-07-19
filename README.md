@@ -1,26 +1,33 @@
-# OTC Settlement in a Trusted Execution Environment
+# tee-otc
 
 Cross-chain OTC swaps secured by Trusted Execution Environments (TEEs).
 
 ## Components
 
-- `otc-server` - Rust WebSocket server for wallet creation and handling the full swap lifecycle, runs in a TEE
+- `otc-server` - Rust WebSocket server for deposit wallet creation and handling the full swap lifecycle, runs in a TEE
 - Bitcoin full node integration
 - Helios light client for Ethereum verification
 - TEE attestation and secure key management
 
+
+## Prerequisites
+- Rust Toolchain
+- sqlx cli
+- nextest
+// TODO: Links
+
 ## Development Workflow
 
-1. **Start PostgreSQL with automatic setup**:
+1. **Start PostgreSQL**:
 
+   *In a seperate terminal*
    ```bash
-   docker compose -f compose.test-db.yml up -d
+   docker compose -f compose.test-db.yml up
    ```
 
    This will automatically:
    - Create the `otc_dev` database
    - Apply the schema (embedded in compose file)
-   - Run in the background (-d for detached mode)
    
    To check logs: `docker compose -f compose.test-db.yml logs`
    To stop: `docker compose -f compose.test-db.yml down`
@@ -33,11 +40,5 @@ Cross-chain OTC swaps secured by Trusted Execution Environments (TEEs).
 
 3. **Run tests**:
    ```bash
-   cargo test
+   cargo nextest run 
    ```
-
-## Development
-
-### Database Configuration
-
-This project uses `sqlx` with compile-time query validation. The `DATABASE_URL` is configured in `.cargo/config.toml` for development. The database and schema are automatically set up when you run `docker compose -f compose.test-db.yml up`.
