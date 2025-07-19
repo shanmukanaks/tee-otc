@@ -30,6 +30,8 @@ Cargo.lock
 .env
 .env.local
 !.env.example
+!.env.test
+!bin/otc-server/.env
 
 # Temporary files
 *.swp
@@ -39,3 +41,6 @@ tmp/
 
 # Logs
 *.log
+
+# SQLx offline mode data (should be committed)
+!.sqlx/

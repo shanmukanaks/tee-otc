@@ -23,3 +23,8 @@ clap = { workspace = true }
 sqlx = { workspace = true }
 uuid = { workspace = true }
 chrono = { workspace = true }
+otc-models = { path = "../../crates/otc-models" }
+alloy = { workspace = true }
+
+[dev-dependencies]
+sqlx = { workspace = true }

@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["bin/otc-server", "crates/otc-models", "crates/otc-chains"]
+members = ["bin/otc-server", "crates/otc-models", "crates/otc-chains", "crates/otc-mm-protocol", "bin/rfq-server"]
 
 [workspace.package]
 edition = "2021"
@@ -12,6 +12,7 @@ repository = "https://github.com/riftresearch/tee-otc"
 # Internal dependencies
 otc-models = { path = "crates/otc-models" }
 otc-chains = { path = "crates/otc-chains" }
+otc-mm-protocol = { path = "crates/otc-mm-protocol" }
 
 tokio = { version = "1.40", features = ["full"] }
 serde = { version = "1.0", features = ["derive"] }
@@ -26,3 +27,7 @@ uuid = { version = "1.10", features = ["v4", "serde"] }
 chrono = { version = "0.4", features = ["serde"] }
 
 alloy = { version = "1.0", features = ["full"] }
+
+
+[profile.dev.package.sqlx-macros]
+opt-level = 3

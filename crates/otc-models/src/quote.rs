@@ -1,10 +1,10 @@
 use crate::ChainType;
+use alloy::primitives::U256;
 use chrono::{DateTime, Utc};
-use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 #[serde(tag = "type", content = "data")]
 pub enum TokenIdentifier {
     Native,
@@ -15,7 +15,7 @@ pub enum TokenIdentifier {
 pub struct Currency { 
     pub chain: ChainType,
     pub token: TokenIdentifier,
-    pub amount: Decimal,
+    pub amount: U256,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

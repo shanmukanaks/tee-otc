@@ -1,13 +1,6 @@
-# OTC Settlement in a Trusted Exeuction Environment
+# OTC Settlement in a Trusted Execution Environment
 
 Cross-chain OTC swaps secured by Trusted Execution Environments (TEEs).
-
-## Key Features
-
-- **Universal chain support** - Any blockchain with standard wallet primitives
-- **Bidirectional BTC swaps** - Native Bitcoin swaps without wrapping
-- **No smart contracts** - Pure wallet-based settlement
-- **TEE-secured** - Runs in Intel TDX secure enclaves
 
 ## Components
 
@@ -15,3 +8,36 @@ Cross-chain OTC swaps secured by Trusted Execution Environments (TEEs).
 - Bitcoin full node integration
 - Helios light client for Ethereum verification
 - TEE attestation and secure key management
+
+## Development Workflow
+
+1. **Start PostgreSQL with automatic setup**:
+
+   ```bash
+   docker compose -f compose.test-db.yml up -d
+   ```
+
+   This will automatically:
+   - Create the `otc_dev` database
+   - Apply the schema (embedded in compose file)
+   - Run in the background (-d for detached mode)
+   
+   To check logs: `docker compose -f compose.test-db.yml logs`
+   To stop: `docker compose -f compose.test-db.yml down`
+
+2. **Build the project**:
+
+   ```bash
+   cargo build
+   ```
+
+3. **Run tests**:
+   ```bash
+   cargo test
+   ```
+
+## Development
+
+### Database Configuration
+
+This project uses `sqlx` with compile-time query validation. The `DATABASE_URL` is configured in `.cargo/config.toml` for development. The database and schema are automatically set up when you run `docker compose -f compose.test-db.yml up`.

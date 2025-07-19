@@ -1,5 +1,6 @@
 use snafu::prelude::*;
 
+pub mod db;
 pub mod server;
 
 #[derive(Debug, Snafu)]

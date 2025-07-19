@@ -1,4 +1,4 @@
-use crate::Result;
+use crate::{db::Database, Result};
 use axum::{
     extract::ws::{WebSocket, WebSocketUpgrade},
     response::IntoResponse,
@@ -31,7 +31,7 @@ pub struct Args {
 
 #[derive(Clone)]
 pub struct AppState {
-    pub db: PgPool,
+    pub db: Database,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -44,13 +44,14 @@ pub async fn run_server(addr: SocketAddr, database_url: &str) -> Result<()> {
     info!("Starting OTC server...");
     
     info!("Connecting to database...");
-    let db = PgPool::connect(database_url)
+    let pool = PgPool::connect(database_url)
         .await
         .context(crate::DatabaseConnectionSnafu)?;
     
     info!("Checking database schema...");
-    initialize_database(&db).await?;
+    initialize_database(&pool).await?;
     
+    let db = Database::new(pool);
     let state = AppState { db };
     
     let app = Router::new()
@@ -126,7 +127,7 @@ async fn initialize_database(db: &PgPool) -> Result<()> {
 
     if !tables_exist {
         info!("Creating database schema...");
-        sqlx::query(include_str!("schema.sql"))
+        sqlx::query(include_str!("db/schema.sql"))
             .execute(db)
             .await
             .context(crate::DatabaseQuerySnafu)?;

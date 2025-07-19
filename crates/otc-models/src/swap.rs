@@ -1,6 +1,6 @@
 use crate::{ChainType, SwapStatus};
+use alloy::primitives::U256;
 use chrono::{DateTime, Utc};
-use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -40,7 +40,7 @@ pub struct WalletPublic {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DepositInfo {
     pub tx_hash: String,
-    pub amount: Decimal,
+    pub amount: U256,
     pub detected_at: DateTime<Utc>,
 }
 
