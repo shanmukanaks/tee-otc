@@ -32,6 +32,14 @@ pub struct MarketMakerArgs {
     /// Market maker identifier
     #[arg(long, env = "MM_ID")]
     pub market_maker_id: String,
+    
+    /// API key ID (UUID) for authentication
+    #[arg(long, env = "MM_API_KEY_ID")]
+    pub api_key_id: String,
+    
+    /// API key for authentication
+    #[arg(long, env = "MM_API_KEY")]
+    pub api_key: String,
 
     /// OTC server WebSocket URL
     #[arg(long, env = "OTC_WS_URL", default_value = "ws://localhost:3000/ws/mm")]
@@ -53,6 +61,8 @@ pub async fn run_market_maker(args: MarketMakerArgs) -> Result<()> {
 
     let config = Config {
         market_maker_id: args.market_maker_id,
+        api_key_id: args.api_key_id,
+        api_key: args.api_key,
         otc_ws_url: args.otc_ws_url,
         auto_accept: args.auto_accept,
         reconnect_interval_secs: 5,

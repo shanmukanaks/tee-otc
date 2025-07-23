@@ -4,7 +4,7 @@ use futures_util::{SinkExt, StreamExt};
 use otc_mm_protocol::{MMRequest, ProtocolMessage};
 use snafu::prelude::*;
 use tokio::time::{sleep, Duration};
-use tokio_tungstenite::{connect_async, tungstenite::Message};
+use tokio_tungstenite::{connect_async_with_config, tungstenite::{Message, http}};
 use tracing::{error, info, warn};
 use url::Url;
 
@@ -83,27 +83,34 @@ impl OtcFillClient {
         let url = Url::parse(&self.config.otc_ws_url).context(UrlParseSnafu)?;
         info!("Connecting to {}", url);
 
-        let (ws_stream, _) = connect_async(url.as_str())
+        // Build request with authentication headers
+        let request = http::Request::builder()
+            .method("GET")
+            .uri(url.as_str())
+            .header("Host", url.host_str().unwrap_or("localhost"))
+            .header("Connection", "Upgrade")
+            .header("Upgrade", "websocket")
+            .header("Sec-WebSocket-Version", "13")
+            .header("Sec-WebSocket-Key", tokio_tungstenite::tungstenite::handshake::client::generate_key())
+            .header("X-API-Key-ID", &self.config.api_key_id)
+            .header("X-API-Key", &self.config.api_key)
+            .body(())
+            .map_err(|e| ClientError::WebSocketConnection {
+                source: tokio_tungstenite::tungstenite::Error::Http(
+                    http::Response::builder()
+                        .status(400)
+                        .body(Some(format!("Failed to build request: {}", e).into_bytes()))
+                        .unwrap()
+                ),
+            })?;
+
+        let (ws_stream, _) = connect_async_with_config(request, None, false)
             .await
             .context(WebSocketConnectionSnafu)?;
 
-        info!("WebSocket connected");
+        info!("WebSocket connected, authenticated via headers");
 
         let (mut write, mut read) = ws_stream.split();
-
-        // Send initial Connect message
-        let connect_msg = serde_json::json!({
-            "Connect": {
-                "market_maker_id": self.config.market_maker_id,
-                "protocol_version": "1.0.0",
-                "capabilities": ["validate_quote", "deposit", "swap_complete"],
-            }
-        });
-
-        write
-            .send(Message::Text(connect_msg.to_string()))
-            .await
-            .context(MessageSendSnafu)?;
 
         // Handle messages
         while let Some(msg) = read.next().await {

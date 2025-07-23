@@ -1,9 +1,10 @@
 use std::net::IpAddr;
 
-use snafu::prelude::*;
+use snafu::{prelude::*, Whatever};
 use clap::Parser;
 
 pub mod api;
+pub mod auth;
 pub mod config;
 pub mod db;
 pub mod server;
@@ -28,6 +29,15 @@ pub enum Error {
     
     #[snafu(display("Database initialization failed: {}", source))]
     DatabaseInit { source: db::DbError },
+
+    #[snafu(display("Generic error: {}", source))]
+    Generic { source: Whatever },
+}
+
+impl From<Whatever> for Error {
+    fn from(err: Whatever) -> Self {
+        Error::Generic { source: err }
+    }
 }
 
 pub type Result<T, E = Error> = std::result::Result<T, E>;
@@ -51,4 +61,21 @@ pub struct OtcServerArgs {
     /// Log level
     #[arg(long, env = "RUST_LOG", default_value = "info")]
     pub log_level: String,
+
+    /// API keys file
+    #[arg(long, env = "WHITELISTED_MM_FILE", default_value = "prod_whitelisted_market_makers.json")]
+    pub whitelist_file: String,
 }
+
+impl Default for OtcServerArgs {
+    fn default() -> Self {
+        Self {
+            host: "127.0.0.1".parse().unwrap(),
+            port: 3000,
+            database_url: "postgres://otc_user:otc_password@localhost:5432/otc_db".to_string(),
+            log_level: "info".to_string(),
+            whitelist_file: "prod_whitelisted_market_makers.json".to_string(),
+        }
+    }
+}
+

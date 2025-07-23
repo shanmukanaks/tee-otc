@@ -1,22 +1,21 @@
 use crate::{
-    api::swaps::{CreateSwapRequest, CreateSwapResponse, SwapResponse}, config::Settings, db::Database, services::{MMRegistry, SwapManager, SwapMonitoringService}, OtcServerArgs, Result
+    api::swaps::{CreateSwapRequest, CreateSwapResponse, SwapResponse}, auth::ApiKeyStore, config::Settings, db::Database, services::{MMRegistry, SwapManager, SwapMonitoringService}, OtcServerArgs, Result
 };
 use axum::{
     extract::{ws::{Message, WebSocket, WebSocketUpgrade}, Path, State},
-    http::StatusCode,
+    http::{StatusCode, HeaderMap},
     response::IntoResponse,
     routing::{get, post, Router},
     Json,
 };
 use futures_util::{SinkExt, StreamExt};
-use clap::Parser;
 use otc_chains::{bitcoin::BitcoinChain, ethereum::EthereumChain, ChainRegistry};
-use otc_mm_protocol::{MMRequest, MMResponse, ProtocolMessage};
+use otc_mm_protocol::{Connected, MMRequest, MMResponse, ProtocolMessage};
 use serde::{Deserialize, Serialize};
 use snafu::prelude::*;
-use std::{net::{IpAddr, SocketAddr}, sync::Arc};
+use std::{net::SocketAddr, sync::Arc};
 use tokio::{sync::mpsc, time::Duration};
-use tracing::{error, info, warn};
+use tracing::{error, info};
 use uuid::Uuid;
 
 
@@ -25,6 +24,7 @@ pub struct AppState {
     pub db: Database,
     pub swap_manager: Arc<SwapManager>,
     pub mm_registry: Arc<MMRegistry>,
+    pub api_key_store: Arc<ApiKeyStore>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -44,7 +44,6 @@ pub async fn run_server(args: OtcServerArgs) -> Result<()> {
             message: format!("Failed to load settings: {}", e) 
         }
     })?);
-    
     let db = Database::connect(&args.database_url)
         .await
         .context(crate::DatabaseInitSnafu)?;
@@ -79,6 +78,9 @@ pub async fn run_server(args: OtcServerArgs) -> Result<()> {
     
     info!("Initializing services...");
     
+    // Initialize API key store
+    let api_key_store = Arc::new(ApiKeyStore::new(args.whitelist_file.into()).await?);
+    
     // Initialize MM registry with 5-second validation timeout
     let mm_registry = Arc::new(MMRegistry::new(Duration::from_secs(5)));
     
@@ -108,6 +110,7 @@ pub async fn run_server(args: OtcServerArgs) -> Result<()> {
         db,
         swap_manager,
         mm_registry,
+        api_key_store,
     };
     
     let app = Router::new()
@@ -119,6 +122,7 @@ pub async fn run_server(args: OtcServerArgs) -> Result<()> {
         // API endpoints
         .route("/api/v1/swaps", post(create_swap))
         .route("/api/v1/swaps/:id", get(get_swap))
+        .route("/api/v1/market-makers/connected", get(get_connected_market_makers))
         .with_state(state);
     
     info!("Listening on {}", addr);
@@ -148,8 +152,49 @@ async fn websocket_handler(ws: WebSocketUpgrade) -> impl IntoResponse {
 async fn mm_websocket_handler(
     ws: WebSocketUpgrade,
     State(state): State<AppState>,
+    headers: HeaderMap,
 ) -> impl IntoResponse {
-    ws.on_upgrade(move |socket| handle_mm_socket(socket, state))
+    // Extract and validate authentication headers
+    let api_key_id = match headers.get("x-api-key-id") {
+        Some(value) => match value.to_str() {
+            Ok(id_str) => match Uuid::parse_str(id_str) {
+                Ok(id) => id,
+                Err(_) => {
+                    return (StatusCode::BAD_REQUEST, "Invalid API key ID format").into_response();
+                }
+            },
+            Err(_) => {
+                return (StatusCode::BAD_REQUEST, "Invalid API key ID header").into_response();
+            }
+        },
+        None => {
+            return (StatusCode::UNAUTHORIZED, "Missing X-API-Key-ID header").into_response();
+        }
+    };
+    
+    let api_key = match headers.get("x-api-key") {
+        Some(value) => match value.to_str() {
+            Ok(key) => key,
+            Err(_) => {
+                return (StatusCode::BAD_REQUEST, "Invalid API key header").into_response();
+            }
+        },
+        None => {
+            return (StatusCode::UNAUTHORIZED, "Missing X-API-Key header").into_response();
+        }
+    };
+    
+    // Validate the API key
+    match state.api_key_store.validate_by_id(&api_key_id, api_key) {
+        Ok(market_maker_id) => {
+            info!("Market maker {} authenticated via headers", market_maker_id);
+            ws.on_upgrade(move |socket| handle_mm_socket(socket, state, market_maker_id))
+        }
+        Err(e) => {
+            error!("API key validation failed: {}", e);
+            (StatusCode::UNAUTHORIZED, "Invalid API key").into_response()
+        }
+    }
 }
 
 async fn handle_socket(mut socket: WebSocket) {
@@ -225,8 +270,20 @@ async fn get_swap(
         })
 }
 
-async fn handle_mm_socket(socket: WebSocket, state: AppState) {
-    info!("Market maker WebSocket connection established");
+#[derive(Serialize)]
+struct ConnectedMarketMakersResponse {
+    market_makers: Vec<String>,
+}
+
+async fn get_connected_market_makers(
+    State(state): State<AppState>,
+) -> Json<ConnectedMarketMakersResponse> {
+    let market_makers = state.mm_registry.get_connected_market_makers();
+    Json(ConnectedMarketMakersResponse { market_makers })
+}
+
+async fn handle_mm_socket(socket: WebSocket, state: AppState, market_maker_id: String) {
+    info!("Market maker {} WebSocket connection established", market_maker_id);
     
     // Channel for sending messages to the MM
     let (tx, mut rx) = mpsc::channel::<ProtocolMessage<MMRequest>>(100);
@@ -234,60 +291,24 @@ async fn handle_mm_socket(socket: WebSocket, state: AppState) {
     // Split the socket for bidirectional communication
     let (sender, mut receiver) = socket.split();
     
-    // Handle the initial connect message
-    let mm_id = match receiver.next().await {
-        Some(Ok(Message::Text(text))) => {
-            match serde_json::from_str::<serde_json::Value>(&text) {
-                Ok(msg) => {
-                    if let Some(connect_msg) = msg.get("Connect") {
-                        if let Some(id) = connect_msg.get("market_maker_id").and_then(|v| v.as_str()) {
-                            let protocol_version = connect_msg.get("protocol_version")
-                                .and_then(|v| v.as_str())
-                                .unwrap_or("1.0.0")
-                                .to_string();
-                            
-                            // Register the MM
-                            state.mm_registry.register(
-                                id.to_string(),
-                                tx.clone(),
-                                protocol_version,
-                            );
-                            
-                            info!("Market maker {} connected", id);
-                            
-                            Some(id.to_string())
-                        } else {
-                            error!("Connect message missing market_maker_id");
-                            return;
-                        }
-                    } else {
-                        error!("First message was not Connect");
-                        return;
-                    }
-                }
-                Err(e) => {
-                    error!("Failed to parse connect message: {}", e);
-                    return;
-                }
-            }
-        }
-        _ => {
-            warn!("Market maker connection closed before Connect message");
-            return;
-        }
-    };
+    // Register the MM immediately (already authenticated via headers)
+    state.mm_registry.register(
+        market_maker_id.clone(),
+        tx.clone(),
+        "1.0.0".to_string(), // Default protocol version
+    );
     
-    let mm_id = match mm_id {
-        Some(id) => id,
-        None => return,
-    };
+    let mm_id = market_maker_id;
     
     // Send Connected response
+    let connected_response = Connected {
+        session_id: Uuid::new_v4(),
+        server_version: env!("CARGO_PKG_VERSION").to_string(),
+        timestamp: chrono::Utc::now(),
+    };
+    
     let response = serde_json::json!({
-        "Connected": {
-            "session_id": Uuid::new_v4().to_string(),
-            "server_version": env!("CARGO_PKG_VERSION"),
-        }
+        "Connected": connected_response
     });
     
     let (sender_tx, mut sender_rx) = mpsc::channel::<Message>(100);

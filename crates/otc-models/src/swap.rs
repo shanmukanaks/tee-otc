@@ -68,17 +68,9 @@ pub struct SettlementStatus {
     pub fee: Option<U256>,
 }
 
-// Legacy types kept for compatibility
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DepositInfo {
     pub tx_hash: String,
     pub amount: U256,
     pub detected_at: DateTime<Utc>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SettlementInfo {
-    pub tx_hash: String,
-    pub fee_rate: String, // gwei or sats/vB for example
-    pub settled_at: DateTime<Utc>,
 }

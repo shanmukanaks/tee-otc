@@ -4,6 +4,10 @@
 
 TEE-OTC is a cross-chain OTC settlement system running in Trusted Execution Environments (TEEs). It enables trustless swaps between Bitcoin and EVM chains using TEE-secured wallets.
 
+## Development Philosophy
+
+- When modifying a component of the system, assume that the old version is completely obsolete and can be fully disregarded. It's never necessary to reason/build in "backwards compatibility" for example
+
 ## Recent Implementation Progress
 
 ### Swap State Machine (2025-07-22)
@@ -61,7 +65,7 @@ TEE-OTC is a cross-chain OTC settlement system running in Trusted Execution Envi
 - PostgreSQL with SQLx for async operations
 - Schema is created on first run if it doesn't exist
 - **Each binary maintains its own migrations** - Database migrations are stored within each binary's directory (e.g., `bin/otc-server/migrations/`)
-- Never put migrations at the workspace root - they belong with the binary that uses them
+- Never put migrations at workspace root - they belong with the binary that uses them
 - If a new binary needs database access, create its own `migrations/` directory within that binary's folder
 - **Migration Strategy**: Combine migrations into one mega migration scoped by table (e.g., one migration for all swap table changes, one for all quote table changes)
 - **Important**: We never have an existing database to migrate - migrations create fresh schemas
