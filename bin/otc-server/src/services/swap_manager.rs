@@ -1,6 +1,7 @@
 use crate::api::swaps::{CreateSwapRequest, CreateSwapResponse, SwapResponse, DepositInfoResponse};
 use crate::config::Settings;
-use crate::db::{Database, DbError};
+use crate::db::Database;
+use crate::error::OtcServerError;
 use crate::services::MMRegistry;
 use chrono::Utc;
 use otc_chains::ChainRegistry;
@@ -33,7 +34,7 @@ pub enum SwapError {
     MarketMakerValidationTimeout,
     
     #[snafu(display("Database error: {}", source))]
-    Database { source: DbError },
+    Database { source: OtcServerError },
     
     #[snafu(display("Chain not supported: {:?}", chain))]
     ChainNotSupported { chain: otc_models::ChainType },
@@ -42,10 +43,10 @@ pub enum SwapError {
     WalletDerivation { source: otc_chains::Error },
 }
 
-impl From<DbError> for SwapError {
-    fn from(err: DbError) -> Self {
+impl From<OtcServerError> for SwapError {
+    fn from(err: OtcServerError) -> Self {
         match err {
-            DbError::NotFound => SwapError::QuoteNotFound { 
+            OtcServerError::NotFound => SwapError::QuoteNotFound { 
                 quote_id: Uuid::nil() // We don't have the ID here
             },
             _ => SwapError::Database { source: err },

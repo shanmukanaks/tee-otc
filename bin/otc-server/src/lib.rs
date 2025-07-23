@@ -7,6 +7,7 @@ pub mod api;
 pub mod auth;
 pub mod config;
 pub mod db;
+pub mod error;
 pub mod server;
 pub mod services;
 
@@ -28,7 +29,7 @@ pub enum Error {
     DatabaseQuery { source: sqlx::Error },
     
     #[snafu(display("Database initialization failed: {}", source))]
-    DatabaseInit { source: db::DbError },
+    DatabaseInit { source: error::OtcServerError },
 
     #[snafu(display("Generic error: {}", source))]
     Generic { source: Whatever },

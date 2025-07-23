@@ -40,7 +40,7 @@ pub async fn run_server(args: OtcServerArgs) -> Result<()> {
     
     // Load configuration
     let settings = Arc::new(Settings::load().map_err(|e| crate::Error::DatabaseInit { 
-        source: crate::db::DbError::InvalidData { 
+        source: crate::error::OtcServerError::InvalidData { 
             message: format!("Failed to load settings: {}", e) 
         }
     })?);
@@ -57,7 +57,7 @@ pub async fn run_server(args: OtcServerArgs) -> Result<()> {
         bitcoincore_rpc::Auth::UserPass("user".to_string(), "pass".to_string()),
         bitcoin::Network::Testnet,
     ).map_err(|e| crate::Error::DatabaseInit { 
-        source: crate::db::DbError::InvalidData { 
+        source: crate::error::OtcServerError::InvalidData { 
             message: format!("Failed to initialize Bitcoin chain: {}", e) 
         }
     })?;
@@ -68,7 +68,7 @@ pub async fn run_server(args: OtcServerArgs) -> Result<()> {
         "http://localhost:8545",
         1, // mainnet chain ID
     ).await.map_err(|e| crate::Error::DatabaseInit { 
-        source: crate::db::DbError::InvalidData { 
+        source: crate::error::OtcServerError::InvalidData { 
             message: format!("Failed to initialize Ethereum chain: {}", e) 
         }
     })?;
@@ -229,44 +229,38 @@ async fn handle_socket(mut socket: WebSocket) {
 async fn create_swap(
     State(state): State<AppState>,
     Json(request): Json<CreateSwapRequest>,
-) -> Result<Json<CreateSwapResponse>, (StatusCode, String)> {
+) -> Result<Json<CreateSwapResponse>, crate::error::OtcServerError> {
     state.swap_manager
         .create_swap(request)
         .await
         .map(Json)
-        .map_err(|e| {
-            let status = match e {
-                crate::services::swap_manager::SwapError::QuoteNotFound { .. } => StatusCode::NOT_FOUND,
-                crate::services::swap_manager::SwapError::QuoteExpired => StatusCode::BAD_REQUEST,
-                crate::services::swap_manager::SwapError::MarketMakerMismatch { .. } => StatusCode::BAD_REQUEST,
-                crate::services::swap_manager::SwapError::MarketMakerRejected => StatusCode::CONFLICT,
-                crate::services::swap_manager::SwapError::MarketMakerNotConnected { .. } => StatusCode::SERVICE_UNAVAILABLE,
-                crate::services::swap_manager::SwapError::MarketMakerValidationTimeout => StatusCode::REQUEST_TIMEOUT,
-                crate::services::swap_manager::SwapError::Database { .. } => StatusCode::INTERNAL_SERVER_ERROR,
-                crate::services::swap_manager::SwapError::ChainNotSupported { .. } => StatusCode::BAD_REQUEST,
-                crate::services::swap_manager::SwapError::WalletDerivation { .. } => StatusCode::INTERNAL_SERVER_ERROR,
-            };
-            (status, e.to_string())
+        .map_err(|e| match e {
+            crate::services::swap_manager::SwapError::QuoteNotFound { .. } => crate::error::OtcServerError::NotFound,
+            crate::services::swap_manager::SwapError::QuoteExpired => crate::error::OtcServerError::BadRequest { message: "Quote has expired".to_string() },
+            crate::services::swap_manager::SwapError::MarketMakerMismatch { .. } => crate::error::OtcServerError::BadRequest { message: e.to_string() },
+            crate::services::swap_manager::SwapError::MarketMakerRejected => crate::error::OtcServerError::Conflict { message: "Market maker rejected the quote".to_string() },
+            crate::services::swap_manager::SwapError::MarketMakerNotConnected { .. } => crate::error::OtcServerError::ServiceUnavailable { service: "market_maker".to_string() },
+            crate::services::swap_manager::SwapError::MarketMakerValidationTimeout => crate::error::OtcServerError::Timeout { message: "Market maker validation timeout".to_string() },
+            crate::services::swap_manager::SwapError::Database { .. } => crate::error::OtcServerError::Internal { message: e.to_string() },
+            crate::services::swap_manager::SwapError::ChainNotSupported { .. } => crate::error::OtcServerError::BadRequest { message: e.to_string() },
+            crate::services::swap_manager::SwapError::WalletDerivation { .. } => crate::error::OtcServerError::Internal { message: e.to_string() },
         })
 }
 
 async fn get_swap(
     State(state): State<AppState>,
     Path(swap_id): Path<Uuid>,
-) -> Result<Json<SwapResponse>, (StatusCode, String)> {
+) -> Result<Json<SwapResponse>, crate::error::OtcServerError> {
     state.swap_manager
         .get_swap(swap_id)
         .await
         .map(Json)
-        .map_err(|e| {
-            let status = match e {
-                crate::services::swap_manager::SwapError::QuoteNotFound { .. } => StatusCode::NOT_FOUND,
-                crate::services::swap_manager::SwapError::Database { .. } => StatusCode::INTERNAL_SERVER_ERROR,
-                crate::services::swap_manager::SwapError::ChainNotSupported { .. } => StatusCode::INTERNAL_SERVER_ERROR,
-                crate::services::swap_manager::SwapError::WalletDerivation { .. } => StatusCode::INTERNAL_SERVER_ERROR,
-                _ => StatusCode::INTERNAL_SERVER_ERROR,
-            };
-            (status, e.to_string())
+        .map_err(|e| match e {
+            crate::services::swap_manager::SwapError::QuoteNotFound { .. } => crate::error::OtcServerError::NotFound,
+            crate::services::swap_manager::SwapError::Database { .. } => crate::error::OtcServerError::Internal { message: e.to_string() },
+            crate::services::swap_manager::SwapError::ChainNotSupported { .. } => crate::error::OtcServerError::Internal { message: e.to_string() },
+            crate::services::swap_manager::SwapError::WalletDerivation { .. } => crate::error::OtcServerError::Internal { message: e.to_string() },
+            _ => crate::error::OtcServerError::Internal { message: e.to_string() },
         })
 }
 

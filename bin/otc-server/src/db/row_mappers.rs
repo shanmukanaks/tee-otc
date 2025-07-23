@@ -5,14 +5,14 @@ use sqlx::Row;
 use uuid::Uuid;
 
 use super::conversions::{currency_from_db, user_deposit_status_from_json, mm_deposit_status_from_json, settlement_status_from_json};
-use super::DbResult;
+use crate::error::{OtcServerError, OtcServerResult};
 
 pub trait FromRow<'r>: Sized {
-    fn from_row(row: &'r PgRow) -> DbResult<Self>;
+    fn from_row(row: &'r PgRow) -> OtcServerResult<Self>;
 }
 
 impl<'r> FromRow<'r> for Quote {
-    fn from_row(row: &'r PgRow) -> DbResult<Self> {
+    fn from_row(row: &'r PgRow) -> OtcServerResult<Self> {
         let id: Uuid = row.try_get("id")?;
         let from_chain: String = row.try_get("from_chain")?;
         let from_token: serde_json::Value = row.try_get("from_token")?;
@@ -41,7 +41,7 @@ impl<'r> FromRow<'r> for Quote {
 }
 
 impl<'r> FromRow<'r> for Swap {
-    fn from_row(row: &'r PgRow) -> DbResult<Self> {
+    fn from_row(row: &'r PgRow) -> OtcServerResult<Self> {
         let id: Uuid = row.try_get("id")?;
         let quote_id: Uuid = row.try_get("quote_id")?;
         let market_maker: String = row.try_get("market_maker")?;
@@ -54,12 +54,12 @@ impl<'r> FromRow<'r> for Swap {
         let mut mm_deposit_salt = [0u8; 32];
         
         if user_deposit_salt_vec.len() != 32 {
-            return Err(super::DbError::InvalidData {
+            return Err(OtcServerError::InvalidData {
                 message: "user_deposit_salt must be exactly 32 bytes".to_string(),
             });
         }
         if mm_deposit_salt_vec.len() != 32 {
-            return Err(super::DbError::InvalidData {
+            return Err(OtcServerError::InvalidData {
                 message: "mm_deposit_salt must be exactly 32 bytes".to_string(),
             });
         }

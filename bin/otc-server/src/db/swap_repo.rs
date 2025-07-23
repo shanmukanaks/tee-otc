@@ -4,7 +4,7 @@ use uuid::Uuid;
 
 use super::conversions::{user_deposit_status_to_json, mm_deposit_status_to_json, settlement_status_to_json};
 use super::row_mappers::FromRow;
-use super::{DbResult, DbError};
+use crate::error::{OtcServerError, OtcServerResult};
 
 #[derive(Clone)]
 pub struct SwapRepository {
@@ -16,7 +16,7 @@ impl SwapRepository {
         Self { pool }
     }
     
-    pub async fn create(&self, swap: &Swap) -> DbResult<()> {
+    pub async fn create(&self, swap: &Swap) -> OtcServerResult<()> {
         let user_deposit_json = match &swap.user_deposit_status {
             Some(status) => Some(user_deposit_status_to_json(status)?),
             None => None,
@@ -71,7 +71,7 @@ impl SwapRepository {
         Ok(())
     }
     
-    pub async fn get(&self, id: Uuid) -> DbResult<Swap> {
+    pub async fn get(&self, id: Uuid) -> OtcServerResult<Swap> {
         let row = sqlx::query(
             r#"
             SELECT 
@@ -94,7 +94,7 @@ impl SwapRepository {
         Swap::from_row(&row)
     }
     
-    pub async fn update_status(&self, id: Uuid, status: SwapStatus) -> DbResult<()> {
+    pub async fn update_status(&self, id: Uuid, status: SwapStatus) -> OtcServerResult<()> {
         sqlx::query(
             r#"
             UPDATE swaps
@@ -114,7 +114,7 @@ impl SwapRepository {
         &self,
         id: Uuid,
         status: &UserDepositStatus,
-    ) -> DbResult<()> {
+    ) -> OtcServerResult<()> {
         let status_json = user_deposit_status_to_json(status)?;
         
         sqlx::query(
@@ -138,7 +138,7 @@ impl SwapRepository {
         &self,
         id: Uuid,
         status: &MMDepositStatus,
-    ) -> DbResult<()> {
+    ) -> OtcServerResult<()> {
         let status_json = mm_deposit_status_to_json(status)?;
         
         sqlx::query(
@@ -158,7 +158,7 @@ impl SwapRepository {
         Ok(())
     }
     
-    pub async fn update_settlement(&self, id: Uuid, status: &SettlementStatus) -> DbResult<()> {
+    pub async fn update_settlement(&self, id: Uuid, status: &SettlementStatus) -> OtcServerResult<()> {
         let status_json = settlement_status_to_json(status)?;
         
         sqlx::query(
@@ -178,7 +178,7 @@ impl SwapRepository {
         Ok(())
     }
     
-    pub async fn get_active_swaps(&self) -> DbResult<Vec<Swap>> {
+    pub async fn get_active_swaps(&self) -> OtcServerResult<Vec<Swap>> {
         let rows = sqlx::query(
             r#"
             SELECT 
@@ -207,7 +207,7 @@ impl SwapRepository {
     }
     
     /// Update entire swap record
-    pub async fn update(&self, swap: &Swap) -> DbResult<()> {
+    pub async fn update(&self, swap: &Swap) -> OtcServerResult<()> {
         let user_deposit_json = swap.user_deposit_status.as_ref()
             .map(user_deposit_status_to_json)
             .transpose()?;
@@ -248,7 +248,7 @@ impl SwapRepository {
         Ok(())
     }
     
-    pub async fn get_swaps_by_market_maker(&self, mm_identifier: &str) -> DbResult<Vec<Swap>> {
+    pub async fn get_swaps_by_market_maker(&self, mm_identifier: &str) -> OtcServerResult<Vec<Swap>> {
         let rows = sqlx::query(
             r#"
             SELECT 
@@ -278,7 +278,7 @@ impl SwapRepository {
     }
     
     /// Alias for get_active_swaps for consistency with monitoring service
-    pub async fn get_active(&self) -> DbResult<Vec<Swap>> {
+    pub async fn get_active(&self) -> OtcServerResult<Vec<Swap>> {
         self.get_active_swaps().await
     }
     
@@ -287,7 +287,7 @@ impl SwapRepository {
         &self,
         swap_id: Uuid,
         deposit_status: UserDepositStatus,
-    ) -> DbResult<()> {
+    ) -> OtcServerResult<()> {
         // First get the swap
         let mut swap = self.get(swap_id).await?;
         
@@ -296,7 +296,7 @@ impl SwapRepository {
             deposit_status.tx_hash.clone(),
             deposit_status.amount,
             deposit_status.confirmations,
-        ).map_err(|e| DbError::InvalidState { message: format!("State transition failed: {}", e) })?;
+        ).map_err(|e| OtcServerError::InvalidState { message: format!("State transition failed: {}", e) })?;
         
         // Update the database
         self.update(&swap).await?;
@@ -308,7 +308,7 @@ impl SwapRepository {
         &self,
         swap_id: Uuid,
         deposit_status: MMDepositStatus,
-    ) -> DbResult<()> {
+    ) -> OtcServerResult<()> {
         // First get the swap
         let mut swap = self.get(swap_id).await?;
         
@@ -317,7 +317,7 @@ impl SwapRepository {
             deposit_status.tx_hash.clone(),
             deposit_status.amount,
             deposit_status.confirmations,
-        ).map_err(|e| DbError::InvalidState { message: format!("State transition failed: {}", e) })?;
+        ).map_err(|e| OtcServerError::InvalidState { message: format!("State transition failed: {}", e) })?;
         
         // Update the database
         self.update(&swap).await?;
@@ -329,10 +329,10 @@ impl SwapRepository {
         &self,
         swap_id: Uuid,
         confirmations: u32,
-    ) -> DbResult<()> {
+    ) -> OtcServerResult<()> {
         let mut swap = self.get(swap_id).await?;
         swap.update_confirmations(Some(confirmations), None)
-            .map_err(|e| DbError::InvalidState { message: format!("State transition failed: {}", e) })?;
+            .map_err(|e| OtcServerError::InvalidState { message: format!("State transition failed: {}", e) })?;
         self.update(&swap).await?;
         Ok(())
     }
@@ -342,55 +342,55 @@ impl SwapRepository {
         &self,
         swap_id: Uuid,
         confirmations: u32,
-    ) -> DbResult<()> {
+    ) -> OtcServerResult<()> {
         let mut swap = self.get(swap_id).await?;
         swap.update_confirmations(None, Some(confirmations))
-            .map_err(|e| DbError::InvalidState { message: format!("State transition failed: {}", e) })?;
+            .map_err(|e| OtcServerError::InvalidState { message: format!("State transition failed: {}", e) })?;
         self.update(&swap).await?;
         Ok(())
     }
     
     /// Update swap when confirmations are reached
-    pub async fn confirmations_reached(&self, swap_id: Uuid) -> DbResult<()> {
+    pub async fn confirmations_reached(&self, swap_id: Uuid) -> OtcServerResult<()> {
         let mut swap = self.get(swap_id).await?;
         swap.confirmations_reached()
-            .map_err(|e| DbError::InvalidState { message: format!("State transition failed: {}", e) })?;
+            .map_err(|e| OtcServerError::InvalidState { message: format!("State transition failed: {}", e) })?;
         self.update(&swap).await?;
         Ok(())
     }
     
     /// Update swap when settlement is completed
-    pub async fn settlement_completed(&self, swap_id: Uuid) -> DbResult<()> {
+    pub async fn settlement_completed(&self, swap_id: Uuid) -> OtcServerResult<()> {
         let mut swap = self.get(swap_id).await?;
         swap.settlement_completed(1, None) // 1 confirmation for completion
-            .map_err(|e| DbError::InvalidState { message: format!("State transition failed: {}", e) })?;
+            .map_err(|e| OtcServerError::InvalidState { message: format!("State transition failed: {}", e) })?;
         self.update(&swap).await?;
         Ok(())
     }
     
     /// Mark swap as failed
-    pub async fn mark_failed(&self, swap_id: Uuid, reason: &str) -> DbResult<()> {
+    pub async fn mark_failed(&self, swap_id: Uuid, reason: &str) -> OtcServerResult<()> {
         let mut swap = self.get(swap_id).await?;
         swap.mark_failed(reason.to_string())
-            .map_err(|e| DbError::InvalidState { message: format!("State transition failed: {}", e) })?;
+            .map_err(|e| OtcServerError::InvalidState { message: format!("State transition failed: {}", e) })?;
         self.update(&swap).await?;
         Ok(())
     }
     
     /// Initiate user refund
-    pub async fn initiate_user_refund(&self, swap_id: Uuid, reason: &str) -> DbResult<()> {
+    pub async fn initiate_user_refund(&self, swap_id: Uuid, reason: &str) -> OtcServerResult<()> {
         let mut swap = self.get(swap_id).await?;
         swap.initiate_user_refund(reason.to_string())
-            .map_err(|e| DbError::InvalidState { message: format!("State transition failed: {}", e) })?;
+            .map_err(|e| OtcServerError::InvalidState { message: format!("State transition failed: {}", e) })?;
         self.update(&swap).await?;
         Ok(())
     }
     
     /// Initiate refunds for both parties
-    pub async fn initiate_both_refunds(&self, swap_id: Uuid, reason: &str) -> DbResult<()> {
+    pub async fn initiate_both_refunds(&self, swap_id: Uuid, reason: &str) -> OtcServerResult<()> {
         let mut swap = self.get(swap_id).await?;
         swap.initiate_both_refunds(reason.to_string())
-            .map_err(|e| DbError::InvalidState { message: format!("State transition failed: {}", e) })?;
+            .map_err(|e| OtcServerError::InvalidState { message: format!("State transition failed: {}", e) })?;
         self.update(&swap).await?;
         Ok(())
     }

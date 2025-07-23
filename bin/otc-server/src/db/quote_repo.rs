@@ -5,7 +5,7 @@ use uuid::Uuid;
 
 use super::conversions::currency_to_db;
 use super::row_mappers::FromRow;
-use super::DbResult;
+use crate::error::{OtcServerError, OtcServerResult};
 
 #[derive(Clone)]
 pub struct QuoteRepository {
@@ -17,7 +17,7 @@ impl QuoteRepository {
         Self { pool }
     }
     
-    pub async fn create(&self, quote: &Quote) -> DbResult<()> {
+    pub async fn create(&self, quote: &Quote) -> OtcServerResult<()> {
         let (from_chain, from_token, from_amount, from_decimals) = currency_to_db(&quote.from)?;
         let (to_chain, to_token, to_amount, to_decimals) = currency_to_db(&quote.to)?;
         
@@ -52,7 +52,7 @@ impl QuoteRepository {
         Ok(())
     }
     
-    pub async fn get(&self, id: Uuid) -> DbResult<Quote> {
+    pub async fn get(&self, id: Uuid) -> OtcServerResult<Quote> {
         let row = sqlx::query(
             r#"
             SELECT 
@@ -73,7 +73,7 @@ impl QuoteRepository {
         Quote::from_row(&row)
     }
     
-    pub async fn get_active_by_market_maker(&self, mm_identifier: &str) -> DbResult<Vec<Quote>> {
+    pub async fn get_active_by_market_maker(&self, mm_identifier: &str) -> OtcServerResult<Vec<Quote>> {
         let rows = sqlx::query(
             r#"
             SELECT 
@@ -101,7 +101,7 @@ impl QuoteRepository {
         Ok(quotes)
     }
     
-    pub async fn get_expired(&self, limit: i64) -> DbResult<Vec<Quote>> {
+    pub async fn get_expired(&self, limit: i64) -> OtcServerResult<Vec<Quote>> {
         let rows = sqlx::query(
             r#"
             SELECT 
@@ -129,7 +129,7 @@ impl QuoteRepository {
         Ok(quotes)
     }
     
-    pub async fn delete_expired(&self, before: DateTime<Utc>) -> DbResult<u64> {
+    pub async fn delete_expired(&self, before: DateTime<Utc>) -> OtcServerResult<u64> {
         let result = sqlx::query(
             r#"
             DELETE FROM quotes

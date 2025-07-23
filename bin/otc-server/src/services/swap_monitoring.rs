@@ -1,5 +1,6 @@
 use crate::config::Settings;
-use crate::db::{Database, DbError};
+use crate::db::Database;
+use crate::error::OtcServerError;
 use chrono::Utc;
 use otc_chains::ChainRegistry;
 use otc_models::{
@@ -14,7 +15,7 @@ use tracing::{info, warn, error};
 #[derive(Debug, Snafu)]
 pub enum MonitoringError {
     #[snafu(display("Database error: {}", source))]
-    Database { source: DbError },
+    Database { source: OtcServerError },
     
     #[snafu(display("Chain operation error: {}", source))]
     ChainOperation { source: otc_chains::Error },
