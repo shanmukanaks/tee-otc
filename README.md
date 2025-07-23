@@ -1,5 +1,4 @@
 # tee-otc
-
 Cross-chain OTC swaps secured by Trusted Execution Environments (TEEs).
 
 ## Components
