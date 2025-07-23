@@ -1,11 +1,10 @@
-use alloy::primitives::U256;
-use otc_models::{Swap, SwapStatus};
+use otc_models::{Swap, SwapStatus, UserDepositStatus, MMDepositStatus, SettlementStatus};
 use sqlx::postgres::PgPool;
 use uuid::Uuid;
 
-use super::conversions::{swap_status_to_db, u256_to_db};
+use super::conversions::{user_deposit_status_to_json, mm_deposit_status_to_json, settlement_status_to_json};
 use super::row_mappers::FromRow;
-use super::DbResult;
+use super::{DbResult, DbError};
 
 #[derive(Clone)]
 pub struct SwapRepository {
@@ -18,7 +17,18 @@ impl SwapRepository {
     }
     
     pub async fn create(&self, swap: &Swap) -> DbResult<()> {
-        let status = swap_status_to_db(&swap.status);
+        let user_deposit_json = match &swap.user_deposit_status {
+            Some(status) => Some(user_deposit_status_to_json(status)?),
+            None => None,
+        };
+        let mm_deposit_json = match &swap.mm_deposit_status {
+            Some(status) => Some(mm_deposit_status_to_json(status)?),
+            None => None,
+        };
+        let settlement_json = match &swap.settlement_status {
+            Some(status) => Some(settlement_status_to_json(status)?),
+            None => None,
+        };
         
         sqlx::query(
             r#"
@@ -27,9 +37,9 @@ impl SwapRepository {
                 user_deposit_salt, mm_deposit_salt,
                 user_destination_address, user_refund_address,
                 status,
-                user_deposit_tx_hash, user_deposit_amount, user_deposit_detected_at,
-                mm_deposit_tx_hash, mm_deposit_amount, mm_deposit_detected_at,
-                user_withdrawal_tx,
+                user_deposit_status, mm_deposit_status, settlement_status,
+                failure_reason, timeout_at,
+                mm_notified_at, mm_private_key_sent_at,
                 created_at, updated_at
             )
             VALUES (
@@ -45,14 +55,14 @@ impl SwapRepository {
         .bind(&swap.mm_deposit_salt[..])
         .bind(&swap.user_destination_address)
         .bind(&swap.user_refund_address)
-        .bind(status)
-        .bind(swap.user_deposit_status.as_ref().map(|d| d.tx_hash.clone()))
-        .bind(swap.user_deposit_status.as_ref().map(|d| u256_to_db(&d.amount)))
-        .bind(swap.user_deposit_status.as_ref().map(|d| d.detected_at))
-        .bind(swap.mm_deposit_status.as_ref().map(|d| d.tx_hash.clone()))
-        .bind(swap.mm_deposit_status.as_ref().map(|d| u256_to_db(&d.amount)))
-        .bind(swap.mm_deposit_status.as_ref().map(|d| d.detected_at))
-        .bind(swap.user_withdrawal_tx.clone())
+        .bind(swap.status)
+        .bind(user_deposit_json)
+        .bind(mm_deposit_json)
+        .bind(settlement_json)
+        .bind(&swap.failure_reason)
+        .bind(swap.timeout_at)
+        .bind(swap.mm_notified_at)
+        .bind(swap.mm_private_key_sent_at)
         .bind(swap.created_at)
         .bind(swap.updated_at)
         .execute(&self.pool)
@@ -69,9 +79,9 @@ impl SwapRepository {
                 user_deposit_salt, mm_deposit_salt,
                 user_destination_address, user_refund_address,
                 status,
-                user_deposit_tx_hash, user_deposit_amount, user_deposit_detected_at,
-                mm_deposit_tx_hash, mm_deposit_amount, mm_deposit_detected_at,
-                user_withdrawal_tx,
+                user_deposit_status, mm_deposit_status, settlement_status,
+                failure_reason, timeout_at,
+                mm_notified_at, mm_private_key_sent_at,
                 created_at, updated_at
             FROM swaps
             WHERE id = $1
@@ -85,8 +95,6 @@ impl SwapRepository {
     }
     
     pub async fn update_status(&self, id: Uuid, status: SwapStatus) -> DbResult<()> {
-        let status_str = swap_status_to_db(&status);
-        
         sqlx::query(
             r#"
             UPDATE swaps
@@ -95,7 +103,7 @@ impl SwapRepository {
             "#,
         )
         .bind(id)
-        .bind(status_str)
+        .bind(status)
         .execute(&self.pool)
         .await?;
         
@@ -105,23 +113,21 @@ impl SwapRepository {
     pub async fn update_user_deposit(
         &self,
         id: Uuid,
-        tx_hash: String,
-        amount: U256,
+        status: &UserDepositStatus,
     ) -> DbResult<()> {
+        let status_json = user_deposit_status_to_json(status)?;
+        
         sqlx::query(
             r#"
             UPDATE swaps
             SET 
-                user_deposit_tx_hash = $2,
-                user_deposit_amount = $3,
-                user_deposit_detected_at = NOW(),
+                user_deposit_status = $2,
                 updated_at = NOW()
             WHERE id = $1
             "#,
         )
         .bind(id)
-        .bind(tx_hash)
-        .bind(u256_to_db(&amount))
+        .bind(status_json)
         .execute(&self.pool)
         .await?;
         
@@ -131,41 +137,41 @@ impl SwapRepository {
     pub async fn update_mm_deposit(
         &self,
         id: Uuid,
-        tx_hash: String,
-        amount: U256,
+        status: &MMDepositStatus,
     ) -> DbResult<()> {
+        let status_json = mm_deposit_status_to_json(status)?;
+        
         sqlx::query(
             r#"
             UPDATE swaps
             SET 
-                mm_deposit_tx_hash = $2,
-                mm_deposit_amount = $3,
-                mm_deposit_detected_at = NOW(),
+                mm_deposit_status = $2,
                 updated_at = NOW()
             WHERE id = $1
             "#,
         )
         .bind(id)
-        .bind(tx_hash)
-        .bind(u256_to_db(&amount))
+        .bind(status_json)
         .execute(&self.pool)
         .await?;
         
         Ok(())
     }
     
-    pub async fn update_withdrawal_tx(&self, id: Uuid, tx_hash: String) -> DbResult<()> {
+    pub async fn update_settlement(&self, id: Uuid, status: &SettlementStatus) -> DbResult<()> {
+        let status_json = settlement_status_to_json(status)?;
+        
         sqlx::query(
             r#"
             UPDATE swaps
             SET 
-                user_withdrawal_tx = $2,
+                settlement_status = $2,
                 updated_at = NOW()
             WHERE id = $1
             "#,
         )
         .bind(id)
-        .bind(tx_hash)
+        .bind(status_json)
         .execute(&self.pool)
         .await?;
         
@@ -180,12 +186,12 @@ impl SwapRepository {
                 user_deposit_salt, mm_deposit_salt,
                 user_destination_address, user_refund_address,
                 status,
-                user_deposit_tx_hash, user_deposit_amount, user_deposit_detected_at,
-                mm_deposit_tx_hash, mm_deposit_amount, mm_deposit_detected_at,
-                user_withdrawal_tx,
+                user_deposit_status, mm_deposit_status, settlement_status,
+                failure_reason, timeout_at,
+                mm_notified_at, mm_private_key_sent_at,
                 created_at, updated_at
             FROM swaps
-            WHERE status NOT IN ('completed', 'quote_rejected', 'refunding')
+            WHERE status NOT IN ('completed', 'failed')
             ORDER BY created_at DESC
             "#,
         )
@@ -200,6 +206,48 @@ impl SwapRepository {
         Ok(swaps)
     }
     
+    /// Update entire swap record
+    pub async fn update(&self, swap: &Swap) -> DbResult<()> {
+        let user_deposit_json = swap.user_deposit_status.as_ref()
+            .map(user_deposit_status_to_json)
+            .transpose()?;
+        let mm_deposit_json = swap.mm_deposit_status.as_ref()
+            .map(mm_deposit_status_to_json)
+            .transpose()?;
+        let settlement_json = swap.settlement_status.as_ref()
+            .map(settlement_status_to_json)
+            .transpose()?;
+        
+        sqlx::query(
+            r#"
+            UPDATE swaps
+            SET 
+                status = $2,
+                user_deposit_status = $3,
+                mm_deposit_status = $4,
+                settlement_status = $5,
+                failure_reason = $6,
+                mm_notified_at = $7,
+                mm_private_key_sent_at = $8,
+                updated_at = $9
+            WHERE id = $1
+            "#,
+        )
+        .bind(swap.id)
+        .bind(&swap.status)
+        .bind(user_deposit_json)
+        .bind(mm_deposit_json)
+        .bind(settlement_json)
+        .bind(&swap.failure_reason)
+        .bind(swap.mm_notified_at)
+        .bind(swap.mm_private_key_sent_at)
+        .bind(swap.updated_at)
+        .execute(&self.pool)
+        .await?;
+        
+        Ok(())
+    }
+    
     pub async fn get_swaps_by_market_maker(&self, mm_identifier: &str) -> DbResult<Vec<Swap>> {
         let rows = sqlx::query(
             r#"
@@ -208,9 +256,9 @@ impl SwapRepository {
                 user_deposit_salt, mm_deposit_salt,
                 user_destination_address, user_refund_address,
                 status,
-                user_deposit_tx_hash, user_deposit_amount, user_deposit_detected_at,
-                mm_deposit_tx_hash, mm_deposit_amount, mm_deposit_detected_at,
-                user_withdrawal_tx,
+                user_deposit_status, mm_deposit_status, settlement_status,
+                failure_reason, timeout_at,
+                mm_notified_at, mm_private_key_sent_at,
                 created_at, updated_at
             FROM swaps
             WHERE market_maker = $1
@@ -228,6 +276,124 @@ impl SwapRepository {
         
         Ok(swaps)
     }
+    
+    /// Alias for get_active_swaps for consistency with monitoring service
+    pub async fn get_active(&self) -> DbResult<Vec<Swap>> {
+        self.get_active_swaps().await
+    }
+    
+    /// Update swap when user deposit is detected
+    pub async fn user_deposit_detected(
+        &self,
+        swap_id: Uuid,
+        deposit_status: UserDepositStatus,
+    ) -> DbResult<()> {
+        // First get the swap
+        let mut swap = self.get(swap_id).await?;
+        
+        // Apply the state transition
+        swap.user_deposit_detected(
+            deposit_status.tx_hash.clone(),
+            deposit_status.amount,
+            deposit_status.confirmations,
+        ).map_err(|e| DbError::InvalidState { message: format!("State transition failed: {}", e) })?;
+        
+        // Update the database
+        self.update(&swap).await?;
+        Ok(())
+    }
+    
+    /// Update swap when MM deposit is detected
+    pub async fn mm_deposit_detected(
+        &self,
+        swap_id: Uuid,
+        deposit_status: MMDepositStatus,
+    ) -> DbResult<()> {
+        // First get the swap
+        let mut swap = self.get(swap_id).await?;
+        
+        // Apply the state transition
+        swap.mm_deposit_detected(
+            deposit_status.tx_hash.clone(),
+            deposit_status.amount,
+            deposit_status.confirmations,
+        ).map_err(|e| DbError::InvalidState { message: format!("State transition failed: {}", e) })?;
+        
+        // Update the database
+        self.update(&swap).await?;
+        Ok(())
+    }
+    
+    /// Update user deposit confirmations
+    pub async fn update_user_confirmations(
+        &self,
+        swap_id: Uuid,
+        confirmations: u32,
+    ) -> DbResult<()> {
+        let mut swap = self.get(swap_id).await?;
+        swap.update_confirmations(Some(confirmations), None)
+            .map_err(|e| DbError::InvalidState { message: format!("State transition failed: {}", e) })?;
+        self.update(&swap).await?;
+        Ok(())
+    }
+    
+    /// Update MM deposit confirmations
+    pub async fn update_mm_confirmations(
+        &self,
+        swap_id: Uuid,
+        confirmations: u32,
+    ) -> DbResult<()> {
+        let mut swap = self.get(swap_id).await?;
+        swap.update_confirmations(None, Some(confirmations))
+            .map_err(|e| DbError::InvalidState { message: format!("State transition failed: {}", e) })?;
+        self.update(&swap).await?;
+        Ok(())
+    }
+    
+    /// Update swap when confirmations are reached
+    pub async fn confirmations_reached(&self, swap_id: Uuid) -> DbResult<()> {
+        let mut swap = self.get(swap_id).await?;
+        swap.confirmations_reached()
+            .map_err(|e| DbError::InvalidState { message: format!("State transition failed: {}", e) })?;
+        self.update(&swap).await?;
+        Ok(())
+    }
+    
+    /// Update swap when settlement is completed
+    pub async fn settlement_completed(&self, swap_id: Uuid) -> DbResult<()> {
+        let mut swap = self.get(swap_id).await?;
+        swap.settlement_completed(1, None) // 1 confirmation for completion
+            .map_err(|e| DbError::InvalidState { message: format!("State transition failed: {}", e) })?;
+        self.update(&swap).await?;
+        Ok(())
+    }
+    
+    /// Mark swap as failed
+    pub async fn mark_failed(&self, swap_id: Uuid, reason: &str) -> DbResult<()> {
+        let mut swap = self.get(swap_id).await?;
+        swap.mark_failed(reason.to_string())
+            .map_err(|e| DbError::InvalidState { message: format!("State transition failed: {}", e) })?;
+        self.update(&swap).await?;
+        Ok(())
+    }
+    
+    /// Initiate user refund
+    pub async fn initiate_user_refund(&self, swap_id: Uuid, reason: &str) -> DbResult<()> {
+        let mut swap = self.get(swap_id).await?;
+        swap.initiate_user_refund(reason.to_string())
+            .map_err(|e| DbError::InvalidState { message: format!("State transition failed: {}", e) })?;
+        self.update(&swap).await?;
+        Ok(())
+    }
+    
+    /// Initiate refunds for both parties
+    pub async fn initiate_both_refunds(&self, swap_id: Uuid, reason: &str) -> DbResult<()> {
+        let mut swap = self.get(swap_id).await?;
+        swap.initiate_both_refunds(reason.to_string())
+            .map_err(|e| DbError::InvalidState { message: format!("State transition failed: {}", e) })?;
+        self.update(&swap).await?;
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -235,8 +401,8 @@ mod tests {
     use alloy::primitives::U256;
     use chrono::{Duration, Utc};
     use otc_models::{
-        ChainType, Currency, DepositInfo, Quote, Swap, SwapStatus,
-        TokenIdentifier,
+        ChainType, Currency, Quote, Swap, SwapStatus, SettlementStatus,
+        TokenIdentifier, UserDepositStatus, MMDepositStatus,
     };
     use crate::db::Database;
     use uuid::Uuid;
@@ -288,7 +454,11 @@ mod tests {
             status: SwapStatus::WaitingUserDeposit,
             user_deposit_status: None,
             mm_deposit_status: None,
-            user_withdrawal_tx: None,
+            settlement_status: None,
+            failure_reason: None,
+            timeout_at: Utc::now() + Duration::hours(1),
+            mm_notified_at: None,
+            mm_private_key_sent_at: None,
             created_at: Utc::now(),
             updated_at: Utc::now(),
         };
@@ -356,17 +526,25 @@ mod tests {
             user_destination_address: "0x9876543210987654321098765432109876543210".to_string(),
             user_refund_address: "bc1qrp33g0q5c5txsp9arysrx4k6zdkfs4nce4xj0gdcccefvpysxf3qccfmv3".to_string(),
             status: SwapStatus::WaitingConfirmations,
-            user_deposit_status: Some(DepositInfo {
+            user_deposit_status: Some(UserDepositStatus {
                 tx_hash: "7d865e959b2466918c9863afca942d0fb89d7c9ac0c99bafc3749504ded97730".to_string(),
                 amount: U256::from(2000000u64),
                 detected_at: now,
+                confirmations: 6,
+                last_checked: now,
             }),
-            mm_deposit_status: Some(DepositInfo {
+            mm_deposit_status: Some(MMDepositStatus {
                 tx_hash: "0x88df016429689c079f3b2f6ad39fa052532c56b6a39df8e3c84c03b8346cfc63".to_string(),
                 amount: U256::from(1000000000000000000u64),
                 detected_at: now + Duration::minutes(5),
+                confirmations: 12,
+                last_checked: now + Duration::minutes(5),
             }),
-            user_withdrawal_tx: None,
+            settlement_status: None,
+            failure_reason: None,
+            timeout_at: now + Duration::hours(1),
+            mm_notified_at: None,
+            mm_private_key_sent_at: None,
             created_at: now,
             updated_at: now + Duration::minutes(5),
         };
@@ -435,10 +613,14 @@ mod tests {
             mm_deposit_salt: mm_salt,
             user_destination_address: "0xabcdef1234567890abcdef1234567890abcdef12".to_string(),
             user_refund_address: "bc1qnahvmnz8vgsdmrr68l5mfr8v8q9fxqz3n5d9u0".to_string(),
-            status: SwapStatus::QuoteValidation,
+            status: SwapStatus::WaitingUserDeposit,
             user_deposit_status: None,
             mm_deposit_status: None,
-            user_withdrawal_tx: None,
+            settlement_status: None,
+            failure_reason: None,
+            timeout_at: Utc::now() + Duration::hours(1),
+            mm_notified_at: None,
+            mm_private_key_sent_at: None,
             created_at: Utc::now(),
             updated_at: Utc::now(),
         };
@@ -453,27 +635,34 @@ mod tests {
 
         // Update user deposit
         let deposit_amount = U256::from(1000000u64);
-        swap_repo.update_user_deposit(
-            swap.id,
-            "abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890".to_string(),
-            deposit_amount,
-        ).await.unwrap();
+        let user_deposit = UserDepositStatus {
+            tx_hash: "abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890".to_string(),
+            amount: deposit_amount,
+            detected_at: Utc::now(),
+            confirmations: 0,
+            last_checked: Utc::now(),
+        };
+        swap_repo.update_user_deposit(swap.id, &user_deposit).await.unwrap();
 
         let updated = swap_repo.get(swap.id).await.unwrap();
         assert!(updated.user_deposit_status.is_some());
         let deposit = updated.user_deposit_status.unwrap();
         assert_eq!(deposit.amount, deposit_amount);
 
-        // Update withdrawal tx
-        swap_repo.update_withdrawal_tx(
-            swap.id,
-            "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef".to_string(),
-        ).await.unwrap();
+        // Update settlement status
+        let settlement_status = SettlementStatus {
+            tx_hash: "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef".to_string(),
+            broadcast_at: Utc::now(),
+            confirmations: 0,
+            completed_at: None,
+            fee: None,
+        };
+        swap_repo.update_settlement(swap.id, &settlement_status).await.unwrap();
 
         let updated = swap_repo.get(swap.id).await.unwrap();
-        assert!(updated.user_withdrawal_tx.is_some());
+        assert!(updated.settlement_status.is_some());
         assert_eq!(
-            updated.user_withdrawal_tx.unwrap(),
+            updated.settlement_status.unwrap().tx_hash,
             "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef"
         );
 
@@ -514,8 +703,8 @@ mod tests {
             SwapStatus::WaitingConfirmations, // Active
             SwapStatus::Settling,             // Active
             SwapStatus::Completed,            // Not active
-            SwapStatus::QuoteRejected,        // Not active
-            SwapStatus::Refunding,            // Not active
+            SwapStatus::Failed,               // Not active
+            SwapStatus::RefundingUser,        // Active (refunding is now active)
         ];
 
         let mut swap_ids = Vec::new();
@@ -537,7 +726,11 @@ mod tests {
                 status: status.clone(),
                 user_deposit_status: None,
                 mm_deposit_status: None,
-                user_withdrawal_tx: None,
+                settlement_status: None,
+                failure_reason: None,
+                timeout_at: Utc::now() + Duration::hours(1),
+                mm_notified_at: None,
+                mm_private_key_sent_at: None,
                 created_at: Utc::now(),
                 updated_at: Utc::now(),
             };
@@ -549,8 +742,8 @@ mod tests {
         // Get active swaps
         let active_swaps = swap_repo.get_active_swaps().await.unwrap();
 
-        // Should return only the first 4 swaps (active statuses)
-        assert_eq!(active_swaps.len(), 4);
+        // Should return 5 swaps (all except completed and failed)
+        assert_eq!(active_swaps.len(), 5);
 
         // Verify only active statuses are returned
         for swap in &active_swaps {
@@ -558,7 +751,8 @@ mod tests {
                 SwapStatus::WaitingUserDeposit |
                 SwapStatus::WaitingMMDeposit |
                 SwapStatus::WaitingConfirmations |
-                SwapStatus::Settling => {
+                SwapStatus::Settling |
+                SwapStatus::RefundingUser => {
                     // These are expected active statuses
                 }
                 _ => panic!("Unexpected status in active swaps: {:?}", swap.status),

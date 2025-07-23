@@ -1,46 +1,30 @@
 use crate::{
-    api::swaps::{CreateSwapRequest, CreateSwapResponse, SwapResponse},
-    config::Settings,
-    db::Database,
-    services::SwapManager,
-    Result,
+    api::swaps::{CreateSwapRequest, CreateSwapResponse, SwapResponse}, config::Settings, db::Database, services::{MMRegistry, SwapManager, SwapMonitoringService}, OtcServerArgs, Result
 };
 use axum::{
-    extract::{ws::{WebSocket, WebSocketUpgrade}, Path, State},
+    extract::{ws::{Message, WebSocket, WebSocketUpgrade}, Path, State},
     http::StatusCode,
     response::IntoResponse,
     routing::{get, post, Router},
     Json,
 };
+use futures_util::{SinkExt, StreamExt};
 use clap::Parser;
 use otc_chains::{bitcoin::BitcoinChain, ethereum::EthereumChain, ChainRegistry};
+use otc_mm_protocol::{MMRequest, MMResponse, ProtocolMessage};
 use serde::{Deserialize, Serialize};
 use snafu::prelude::*;
 use std::{net::{IpAddr, SocketAddr}, sync::Arc};
-use tracing::info;
+use tokio::{sync::mpsc, time::Duration};
+use tracing::{error, info, warn};
 use uuid::Uuid;
 
-#[derive(Parser, Debug)]
-#[command(name = "otc-server")]
-#[command(about = "TEE-OTC server for cross-chain swaps")]
-pub struct Args {
-    /// Host to bind to
-    #[arg(short = 'H', long, default_value = "127.0.0.1")]
-    pub host: IpAddr,
-    
-    /// Port to bind to
-    #[arg(short, long, default_value = "3000")]
-    pub port: u16,
-    
-    /// Database URL
-    #[arg(long, env = "DATABASE_URL", default_value = "postgres://otc_user:otc_password@localhost:5432/otc_db")]
-    pub database_url: String,
-}
 
 #[derive(Clone)]
 pub struct AppState {
     pub db: Database,
     pub swap_manager: Arc<SwapManager>,
+    pub mm_registry: Arc<MMRegistry>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -49,8 +33,10 @@ struct Status {
     version: String,
 }
 
-pub async fn run_server(addr: SocketAddr, database_url: &str) -> Result<()> {
+pub async fn run_server(args: OtcServerArgs) -> Result<()> {
     info!("Starting OTC server...");
+
+    let addr = SocketAddr::from((args.host, args.port));
     
     // Load configuration
     let settings = Arc::new(Settings::load().map_err(|e| crate::Error::DatabaseInit { 
@@ -59,7 +45,7 @@ pub async fn run_server(addr: SocketAddr, database_url: &str) -> Result<()> {
         }
     })?);
     
-    let db = Database::connect(database_url)
+    let db = Database::connect(&args.database_url)
         .await
         .context(crate::DatabaseInitSnafu)?;
     
@@ -92,18 +78,44 @@ pub async fn run_server(addr: SocketAddr, database_url: &str) -> Result<()> {
     let chain_registry = Arc::new(chain_registry);
     
     info!("Initializing services...");
-    let swap_manager = Arc::new(SwapManager::new(db.clone(), settings, chain_registry));
+    
+    // Initialize MM registry with 5-second validation timeout
+    let mm_registry = Arc::new(MMRegistry::new(Duration::from_secs(5)));
+    
+    let swap_manager = Arc::new(SwapManager::new(
+        db.clone(), 
+        settings.clone(), 
+        chain_registry.clone(),
+        mm_registry.clone(),
+    ));
+    
+    // Start the swap monitoring service
+    let swap_monitoring_service = Arc::new(SwapMonitoringService::new(
+        db.clone(), 
+        settings.clone(), 
+        chain_registry.clone()
+    ));
+    
+    info!("Starting swap monitoring service...");
+    tokio::spawn({
+        let monitoring_service = swap_monitoring_service.clone();
+        async move {
+            monitoring_service.run().await;
+        }
+    });
     
     let state = AppState { 
         db,
         swap_manager,
+        mm_registry,
     };
     
     let app = Router::new()
         // Health check
         .route("/status", get(status_handler))
-        // WebSocket endpoint
+        // WebSocket endpoints
         .route("/ws", get(websocket_handler))
+        .route("/ws/mm", get(mm_websocket_handler))
         // API endpoints
         .route("/api/v1/swaps", post(create_swap))
         .route("/api/v1/swaps/:id", get(get_swap))
@@ -131,6 +143,13 @@ async fn status_handler() -> impl IntoResponse {
 
 async fn websocket_handler(ws: WebSocketUpgrade) -> impl IntoResponse {
     ws.on_upgrade(handle_socket)
+}
+
+async fn mm_websocket_handler(
+    ws: WebSocketUpgrade,
+    State(state): State<AppState>,
+) -> impl IntoResponse {
+    ws.on_upgrade(move |socket| handle_mm_socket(socket, state))
 }
 
 async fn handle_socket(mut socket: WebSocket) {
@@ -176,6 +195,8 @@ async fn create_swap(
                 crate::services::swap_manager::SwapError::QuoteExpired => StatusCode::BAD_REQUEST,
                 crate::services::swap_manager::SwapError::MarketMakerMismatch { .. } => StatusCode::BAD_REQUEST,
                 crate::services::swap_manager::SwapError::MarketMakerRejected => StatusCode::CONFLICT,
+                crate::services::swap_manager::SwapError::MarketMakerNotConnected { .. } => StatusCode::SERVICE_UNAVAILABLE,
+                crate::services::swap_manager::SwapError::MarketMakerValidationTimeout => StatusCode::REQUEST_TIMEOUT,
                 crate::services::swap_manager::SwapError::Database { .. } => StatusCode::INTERNAL_SERVER_ERROR,
                 crate::services::swap_manager::SwapError::ChainNotSupported { .. } => StatusCode::BAD_REQUEST,
                 crate::services::swap_manager::SwapError::WalletDerivation { .. } => StatusCode::INTERNAL_SERVER_ERROR,
@@ -202,4 +223,158 @@ async fn get_swap(
             };
             (status, e.to_string())
         })
+}
+
+async fn handle_mm_socket(socket: WebSocket, state: AppState) {
+    info!("Market maker WebSocket connection established");
+    
+    // Channel for sending messages to the MM
+    let (tx, mut rx) = mpsc::channel::<ProtocolMessage<MMRequest>>(100);
+    
+    // Split the socket for bidirectional communication
+    let (sender, mut receiver) = socket.split();
+    
+    // Handle the initial connect message
+    let mm_id = match receiver.next().await {
+        Some(Ok(Message::Text(text))) => {
+            match serde_json::from_str::<serde_json::Value>(&text) {
+                Ok(msg) => {
+                    if let Some(connect_msg) = msg.get("Connect") {
+                        if let Some(id) = connect_msg.get("market_maker_id").and_then(|v| v.as_str()) {
+                            let protocol_version = connect_msg.get("protocol_version")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("1.0.0")
+                                .to_string();
+                            
+                            // Register the MM
+                            state.mm_registry.register(
+                                id.to_string(),
+                                tx.clone(),
+                                protocol_version,
+                            );
+                            
+                            info!("Market maker {} connected", id);
+                            
+                            Some(id.to_string())
+                        } else {
+                            error!("Connect message missing market_maker_id");
+                            return;
+                        }
+                    } else {
+                        error!("First message was not Connect");
+                        return;
+                    }
+                }
+                Err(e) => {
+                    error!("Failed to parse connect message: {}", e);
+                    return;
+                }
+            }
+        }
+        _ => {
+            warn!("Market maker connection closed before Connect message");
+            return;
+        }
+    };
+    
+    let mm_id = match mm_id {
+        Some(id) => id,
+        None => return,
+    };
+    
+    // Send Connected response
+    let response = serde_json::json!({
+        "Connected": {
+            "session_id": Uuid::new_v4().to_string(),
+            "server_version": env!("CARGO_PKG_VERSION"),
+        }
+    });
+    
+    let (sender_tx, mut sender_rx) = mpsc::channel::<Message>(100);
+    
+    // Send initial connected response
+    if sender_tx.send(Message::Text(response.to_string())).await.is_err() {
+        error!("Failed to send Connected response");
+        return;
+    }
+    
+    // Spawn task to handle outgoing messages from the registry
+    let mm_id_clone = mm_id.clone();
+    let sender_tx_clone = sender_tx.clone();
+    tokio::spawn(async move {
+        while let Some(msg) = rx.recv().await {
+            if let Ok(json) = serde_json::to_string(&msg) {
+                if sender_tx_clone.send(Message::Text(json)).await.is_err() {
+                    error!("Failed to send message to market maker {}", mm_id_clone);
+                    break;
+                }
+            }
+        }
+    });
+    
+    // Spawn task to forward messages to the socket
+    let mm_id_clone = mm_id.clone();
+    let mut sender = sender;
+    tokio::spawn(async move {
+        while let Some(msg) = sender_rx.recv().await {
+            if sender.send(msg).await.is_err() {
+                error!("Failed to send message to market maker {} socket", mm_id_clone);
+                break;
+            }
+        }
+    });
+    
+    // Handle incoming messages
+    while let Some(msg) = receiver.next().await {
+        match msg {
+            Ok(Message::Text(text)) => {
+                match serde_json::from_str::<ProtocolMessage<MMResponse>>(&text) {
+                    Ok(msg) => {
+                        match &msg.payload {
+                            MMResponse::QuoteValidated { quote_id, accepted, .. } => {
+                                info!(
+                                    "Market maker {} validated quote {}: accepted={}",
+                                    mm_id, quote_id, accepted
+                                );
+                                state.mm_registry.handle_validation_response(
+                                    &mm_id,
+                                    &quote_id.to_string(),
+                                    *accepted,
+                                );
+                            }
+                            MMResponse::Pong { .. } => {
+                                // Handle pong for keepalive
+                            }
+                            MMResponse::DepositInitiated { .. } => {
+                                // Handle deposit notification - will be implemented when needed
+                            }
+                            MMResponse::SwapCompleteAck { .. } => {
+                                // Handle swap complete acknowledgment
+                            }
+                            MMResponse::Error { .. } => {
+                                // Handle error response
+                                error!("Received error response from market maker {}", mm_id);
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        error!("Failed to parse MM message: {}", e);
+                    }
+                }
+            }
+            Ok(Message::Close(_)) => {
+                info!("Market maker {} disconnected", mm_id);
+                break;
+            }
+            Err(e) => {
+                error!("WebSocket error for market maker {}: {}", mm_id, e);
+                break;
+            }
+            _ => {}
+        }
+    }
+    
+    // Unregister on disconnect
+    state.mm_registry.unregister(&mm_id);
+    info!("Market maker {} unregistered", mm_id);
 }

@@ -1,4 +1,7 @@
+use std::net::IpAddr;
+
 use snafu::prelude::*;
+use clap::Parser;
 
 pub mod api;
 pub mod config;
@@ -29,4 +32,23 @@ pub enum Error {
 
 pub type Result<T, E = Error> = std::result::Result<T, E>;
 
-pub use server::{run_server, Args};
+#[derive(Parser, Debug)]
+#[command(name = "otc-server")]
+#[command(about = "TEE-OTC server for cross-chain swaps")]
+pub struct OtcServerArgs {
+    /// Host to bind to
+    #[arg(short = 'H', long, default_value = "127.0.0.1")]
+    pub host: IpAddr,
+    
+    /// Port to bind to
+    #[arg(short, long, default_value = "3000")]
+    pub port: u16,
+    
+    /// Database URL
+    #[arg(long, env = "DATABASE_URL", default_value = "postgres://otc_user:otc_password@localhost:5432/otc_db")]
+    pub database_url: String,
+
+    /// Log level
+    #[arg(long, env = "RUST_LOG", default_value = "info")]
+    pub log_level: String,
+}

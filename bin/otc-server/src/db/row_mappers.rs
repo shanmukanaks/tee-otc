@@ -1,10 +1,10 @@
 use chrono::{DateTime, Utc};
-use otc_models::{Quote, Swap};
+use otc_models::{Quote, Swap, SwapStatus};
 use sqlx::postgres::PgRow;
 use sqlx::Row;
 use uuid::Uuid;
 
-use super::conversions::{currency_from_db, swap_status_from_db, u256_from_db};
+use super::conversions::{currency_from_db, user_deposit_status_from_json, mm_deposit_status_from_json, settlement_status_from_json};
 use super::DbResult;
 
 pub trait FromRow<'r>: Sized {
@@ -69,21 +69,31 @@ impl<'r> FromRow<'r> for Swap {
         
         let user_destination_address: String = row.try_get("user_destination_address")?;
         let user_refund_address: String = row.try_get("user_refund_address")?;
-        let status: String = row.try_get("status")?;
+        let status: SwapStatus = row.try_get("status")?;
         
-        let user_deposit_status = map_optional_deposit_info(
-            row.try_get("user_deposit_tx_hash")?,
-            row.try_get("user_deposit_amount")?,
-            row.try_get("user_deposit_detected_at")?,
-        )?;
+        // Handle JSONB fields
+        let user_deposit_json: Option<serde_json::Value> = row.try_get("user_deposit_status")?;
+        let user_deposit_status = match user_deposit_json {
+            Some(json) => Some(user_deposit_status_from_json(json)?),
+            None => None,
+        };
         
-        let mm_deposit_status = map_optional_deposit_info(
-            row.try_get("mm_deposit_tx_hash")?,
-            row.try_get("mm_deposit_amount")?,
-            row.try_get("mm_deposit_detected_at")?,
-        )?;
+        let mm_deposit_json: Option<serde_json::Value> = row.try_get("mm_deposit_status")?;
+        let mm_deposit_status = match mm_deposit_json {
+            Some(json) => Some(mm_deposit_status_from_json(json)?),
+            None => None,
+        };
         
-        let user_withdrawal_tx: Option<String> = row.try_get("user_withdrawal_tx")?;
+        let settlement_json: Option<serde_json::Value> = row.try_get("settlement_status")?;
+        let settlement_status = match settlement_json {
+            Some(json) => Some(settlement_status_from_json(json)?),
+            None => None,
+        };
+        
+        let failure_reason: Option<String> = row.try_get("failure_reason")?;
+        let timeout_at: DateTime<Utc> = row.try_get("timeout_at")?;
+        let mm_notified_at: Option<DateTime<Utc>> = row.try_get("mm_notified_at")?;
+        let mm_private_key_sent_at: Option<DateTime<Utc>> = row.try_get("mm_private_key_sent_at")?;
         let created_at: DateTime<Utc> = row.try_get("created_at")?;
         let updated_at: DateTime<Utc> = row.try_get("updated_at")?;
         
@@ -95,30 +105,17 @@ impl<'r> FromRow<'r> for Swap {
             mm_deposit_salt,
             user_destination_address,
             user_refund_address,
-            status: swap_status_from_db(&status)?,
+            status,
             user_deposit_status,
             mm_deposit_status,
-            user_withdrawal_tx,
+            settlement_status,
+            failure_reason,
+            timeout_at,
+            mm_notified_at,
+            mm_private_key_sent_at,
             created_at,
             updated_at,
         })
     }
 }
 
-pub fn map_optional_deposit_info(
-    tx_hash: Option<String>,
-    amount: Option<String>,
-    detected_at: Option<DateTime<Utc>>,
-) -> DbResult<Option<otc_models::DepositInfo>> {
-    match (tx_hash, amount, detected_at) {
-        (Some(tx_hash), Some(amount), Some(detected_at)) => {
-            let amount = u256_from_db(&amount)?;
-            Ok(Some(otc_models::DepositInfo {
-                tx_hash,
-                amount,
-                detected_at,
-            }))
-        }
-        _ => Ok(None),
-    }
-}

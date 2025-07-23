@@ -2,10 +2,12 @@
 resolver = "2"
 members = [
     "bin/otc-server",
+    "bin/market-maker",
+    "bin/rfq-server",
+    "crates/common",
     "crates/otc-models",
     "crates/otc-chains",
-    "crates/otc-mm-protocol",
-    "bin/rfq-server"
+    "crates/otc-mm-protocol"
 ]
 
 [workspace.package]
@@ -19,6 +21,7 @@ repository = "https://github.com/riftresearch/tee-otc"
 otc-models = { path = "crates/otc-models" }
 otc-chains = { path = "crates/otc-chains" }
 otc-mm-protocol = { path = "crates/otc-mm-protocol" }
+common = { path = "crates/common" }
 
 tokio = { version = "1.40", features = ["full"] }
 serde = { version = "1.0", features = ["derive"] }
@@ -41,7 +44,10 @@ getrandom = "0.2"
 toml = "0.8"
 bitcoin = "0.32"
 bitcoincore-rpc = "0.19"
-
+dashmap = "6.1"
+futures-util = "0.3"
+tokio-tungstenite = "0.24"
+url = "2.5"
 
 [profile.dev.package.sqlx-macros]
 opt-level = 3

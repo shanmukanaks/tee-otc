@@ -27,6 +27,9 @@ pub enum DbError {
     
     #[snafu(display("Migration failed: {}", source))]
     Migration { source: sqlx::migrate::MigrateError },
+    
+    #[snafu(display("Invalid state: {}", message))]
+    InvalidState { message: String },
 }
 
 impl From<sqlx::Error> for DbError {

@@ -65,7 +65,34 @@ async fn test_create_swap_success(pool: PgPool) -> sqlx::Result<()> {
     chain_registry.register(ChainType::Ethereum, Arc::new(ethereum_chain));
     
     let chain_registry = Arc::new(chain_registry);
-    let swap_manager = otc_server::services::SwapManager::new(db.clone(), settings, chain_registry);
+    
+    // Create MM registry and register test market maker
+    let mm_registry = Arc::new(otc_server::services::MMRegistry::new(tokio::time::Duration::from_secs(5)));
+    
+    // Register the test market maker
+    let (mm_tx, mut mm_rx) = tokio::sync::mpsc::channel(10);
+    mm_registry.register("test-mm".to_string(), mm_tx, "1.0.0".to_string());
+    
+    // Spawn a task to handle MM validation requests
+    let mm_registry_clone = mm_registry.clone();
+    tokio::spawn(async move {
+        while let Some(msg) = mm_rx.recv().await {
+            match msg.payload {
+                otc_mm_protocol::MMRequest::ValidateQuote { quote_id, .. } => {
+                    // Accept all quotes in tests
+                    mm_registry_clone.handle_validation_response("test-mm", &quote_id.to_string(), true);
+                }
+                _ => {}
+            }
+        }
+    });
+    
+    let swap_manager = otc_server::services::SwapManager::new(
+        db.clone(), 
+        settings, 
+        chain_registry,
+        mm_registry,
+    );
     
     let response = swap_manager.create_swap(request).await.unwrap();
     
@@ -139,7 +166,34 @@ async fn test_create_swap_expired_quote(pool: PgPool) -> sqlx::Result<()> {
     chain_registry.register(ChainType::Ethereum, Arc::new(ethereum_chain));
     
     let chain_registry = Arc::new(chain_registry);
-    let swap_manager = otc_server::services::SwapManager::new(db.clone(), settings, chain_registry);
+    
+    // Create MM registry and register test market maker
+    let mm_registry = Arc::new(otc_server::services::MMRegistry::new(tokio::time::Duration::from_secs(5)));
+    
+    // Register the test market maker
+    let (mm_tx, mut mm_rx) = tokio::sync::mpsc::channel(10);
+    mm_registry.register("test-mm".to_string(), mm_tx, "1.0.0".to_string());
+    
+    // Spawn a task to handle MM validation requests
+    let mm_registry_clone = mm_registry.clone();
+    tokio::spawn(async move {
+        while let Some(msg) = mm_rx.recv().await {
+            match msg.payload {
+                otc_mm_protocol::MMRequest::ValidateQuote { quote_id, .. } => {
+                    // Accept all quotes in tests
+                    mm_registry_clone.handle_validation_response("test-mm", &quote_id.to_string(), true);
+                }
+                _ => {}
+            }
+        }
+    });
+    
+    let swap_manager = otc_server::services::SwapManager::new(
+        db.clone(), 
+        settings, 
+        chain_registry,
+        mm_registry,
+    );
     
     // Should fail with QuoteExpired error
     let result = swap_manager.create_swap(request).await;

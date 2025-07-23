@@ -1,5 +1,5 @@
 use alloy::primitives::U256;
-use otc_models::{ChainType, SwapStatus, TokenIdentifier, Currency};
+use otc_models::{ChainType, TokenIdentifier, Currency, UserDepositStatus, MMDepositStatus, SettlementStatus};
 use serde_json;
 use super::{DbError, DbResult};
 
@@ -16,35 +16,6 @@ pub fn chain_type_from_db(s: &str) -> DbResult<ChainType> {
         "ethereum" => Ok(ChainType::Ethereum),
         _ => Err(DbError::InvalidData {
             message: format!("Invalid chain type: {}", s),
-        }),
-    }
-}
-
-pub fn swap_status_to_db(status: &SwapStatus) -> &'static str {
-    match status {
-        SwapStatus::QuoteValidation => "quote_validation",
-        SwapStatus::QuoteRejected => "quote_rejected",
-        SwapStatus::WaitingUserDeposit => "waiting_user_deposit",
-        SwapStatus::WaitingMMDeposit => "waiting_mm_deposit",
-        SwapStatus::WaitingConfirmations => "waiting_confirmations",
-        SwapStatus::Settling => "settling",
-        SwapStatus::Completed => "completed",
-        SwapStatus::Refunding => "refunding",
-    }
-}
-
-pub fn swap_status_from_db(s: &str) -> DbResult<SwapStatus> {
-    match s {
-        "quote_validation" => Ok(SwapStatus::QuoteValidation),
-        "quote_rejected" => Ok(SwapStatus::QuoteRejected),
-        "waiting_user_deposit" => Ok(SwapStatus::WaitingUserDeposit),
-        "waiting_mm_deposit" => Ok(SwapStatus::WaitingMMDeposit),
-        "waiting_confirmations" => Ok(SwapStatus::WaitingConfirmations),
-        "settling" => Ok(SwapStatus::Settling),
-        "completed" => Ok(SwapStatus::Completed),
-        "refunding" => Ok(SwapStatus::Refunding),
-        _ => Err(DbError::InvalidData {
-            message: format!("Invalid swap status: {}", s),
         }),
     }
 }
@@ -88,6 +59,42 @@ pub fn currency_from_db(chain: String, token: serde_json::Value, amount: String,
     })
 }
 
+pub fn user_deposit_status_to_json(status: &UserDepositStatus) -> DbResult<serde_json::Value> {
+    serde_json::to_value(status).map_err(|e| DbError::InvalidData {
+        message: format!("Failed to serialize user deposit status: {}", e),
+    })
+}
+
+pub fn user_deposit_status_from_json(value: serde_json::Value) -> DbResult<UserDepositStatus> {
+    serde_json::from_value(value).map_err(|e| DbError::InvalidData {
+        message: format!("Failed to deserialize user deposit status: {}", e),
+    })
+}
+
+pub fn mm_deposit_status_to_json(status: &MMDepositStatus) -> DbResult<serde_json::Value> {
+    serde_json::to_value(status).map_err(|e| DbError::InvalidData {
+        message: format!("Failed to serialize MM deposit status: {}", e),
+    })
+}
+
+pub fn mm_deposit_status_from_json(value: serde_json::Value) -> DbResult<MMDepositStatus> {
+    serde_json::from_value(value).map_err(|e| DbError::InvalidData {
+        message: format!("Failed to deserialize MM deposit status: {}", e),
+    })
+}
+
+pub fn settlement_status_to_json(status: &SettlementStatus) -> DbResult<serde_json::Value> {
+    serde_json::to_value(status).map_err(|e| DbError::InvalidData {
+        message: format!("Failed to serialize settlement status: {}", e),
+    })
+}
+
+pub fn settlement_status_from_json(value: serde_json::Value) -> DbResult<SettlementStatus> {
+    serde_json::from_value(value).map_err(|e| DbError::InvalidData {
+        message: format!("Failed to deserialize settlement status: {}", e),
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -102,11 +109,6 @@ mod tests {
         assert!(chain_type_from_db("invalid").is_err());
     }
     
-    #[test]
-    fn test_swap_status_conversion() {
-        assert_eq!(swap_status_to_db(&SwapStatus::Completed), "completed");
-        assert_eq!(swap_status_from_db("completed").unwrap(), SwapStatus::Completed);
-    }
 
     #[test]
     fn test_currency_conversion() {

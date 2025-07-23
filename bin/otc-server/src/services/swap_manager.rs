@@ -1,12 +1,15 @@
 use crate::api::swaps::{CreateSwapRequest, CreateSwapResponse, SwapResponse, DepositInfoResponse};
 use crate::config::Settings;
 use crate::db::{Database, DbError};
+use crate::services::MMRegistry;
 use chrono::Utc;
 use otc_chains::ChainRegistry;
 use otc_models::{Swap, SwapStatus, TokenIdentifier};
 use snafu::prelude::*;
 use std::sync::Arc;
-use tracing::info;
+use tokio::sync::oneshot;
+use tokio::time::{timeout, Duration};
+use tracing::{info, warn};
 use uuid::Uuid;
 
 #[derive(Debug, Snafu)]
@@ -22,6 +25,12 @@ pub enum SwapError {
     
     #[snafu(display("Market maker rejected the quote"))]
     MarketMakerRejected,
+    
+    #[snafu(display("Market maker not connected: {}", market_maker_id))]
+    MarketMakerNotConnected { market_maker_id: String },
+    
+    #[snafu(display("Market maker validation timeout"))]
+    MarketMakerValidationTimeout,
     
     #[snafu(display("Database error: {}", source))]
     Database { source: DbError },
@@ -51,15 +60,21 @@ pub struct SwapManager {
     db: Database,
     settings: Arc<Settings>,
     chain_registry: Arc<ChainRegistry>,
-    // TODO: Add market_maker_registry: Arc<MarketMakerRegistry>,
+    mm_registry: Arc<MMRegistry>,
 }
 
 impl SwapManager {
-    pub fn new(db: Database, settings: Arc<Settings>, chain_registry: Arc<ChainRegistry>) -> Self {
+    pub fn new(
+        db: Database, 
+        settings: Arc<Settings>, 
+        chain_registry: Arc<ChainRegistry>,
+        mm_registry: Arc<MMRegistry>,
+    ) -> Self {
         Self {
             db,
             settings,
             chain_registry,
+            mm_registry,
         }
     }
     
@@ -93,16 +108,54 @@ impl SwapManager {
         }
 
         
-        // 4. TODO: Ask market maker if they'll fill this quote
-        // TODO(claude): I've decided I want this to actually depend on the market maker responding in realtime
-        // so once we build out the market maker <-> otc-server websocket protocol and a have a way to ask the market maker
-        // from this service, we can build this
-        // For now, we'll assume they always accept
-        info!("TODO: Implement market maker validation for quote {}", quote.id);
-        let mm_accepts = true;
+        // 4. Ask market maker if they'll fill this quote
+        info!("Validating quote {} with market maker {}", quote.id, quote.market_maker_identifier);
         
-        if !mm_accepts {
-            return Err(SwapError::MarketMakerRejected);
+        // Check if MM is connected
+        if !self.mm_registry.is_connected(&quote.market_maker_identifier) {
+            warn!("Market maker {} not connected, rejecting swap", quote.market_maker_identifier);
+            return Err(SwapError::MarketMakerNotConnected {
+                market_maker_id: quote.market_maker_identifier,
+            });
+        }
+        
+        // Send validation request with timeout
+        let (response_tx, response_rx) = oneshot::channel();
+        self.mm_registry.validate_quote(
+            &quote.market_maker_identifier,
+            quote.id.to_string(),
+            response_tx,
+        ).await;
+        
+        // Wait for response with timeout
+        let validation_result = match timeout(
+            Duration::from_secs(5),
+            response_rx
+        ).await {
+            Ok(Ok(result)) => result,
+            Ok(Err(_)) => {
+                warn!("Failed to receive validation response from market maker");
+                return Err(SwapError::MarketMakerValidationTimeout);
+            }
+            Err(_) => {
+                warn!("Market maker validation timed out after 5 seconds");
+                return Err(SwapError::MarketMakerValidationTimeout);
+            }
+        };
+        
+        // Handle the validation result
+        match validation_result {
+            Ok(accepted) => {
+                if !accepted {
+                    info!("Market maker rejected quote {}", quote.id);
+                    return Err(SwapError::MarketMakerRejected);
+                }
+                info!("Market maker accepted quote {}", quote.id);
+            }
+            Err(e) => {
+                warn!("Market maker validation error: {:?}", e);
+                return Err(SwapError::MarketMakerValidationTimeout);
+            }
         }
         
         // 5. Generate random salts for wallet derivation
@@ -113,6 +166,7 @@ impl SwapManager {
         getrandom::getrandom(&mut mm_deposit_salt).expect("Failed to generate random salt");
         
         // 6. Create swap record
+        let now = Utc::now();
         let swap = Swap {
             id: swap_id,
             quote_id: quote.id,
@@ -124,9 +178,13 @@ impl SwapManager {
             status: SwapStatus::WaitingUserDeposit,
             user_deposit_status: None,
             mm_deposit_status: None,
-            user_withdrawal_tx: None,
-            created_at: Utc::now(),
-            updated_at: Utc::now(),
+            settlement_status: None,
+            failure_reason: None,
+            timeout_at: quote.expires_at, // Use quote expiry as timeout
+            mm_notified_at: None,
+            mm_private_key_sent_at: None,
+            created_at: now,
+            updated_at: now,
         };
         
         // Save to database
@@ -232,7 +290,7 @@ impl SwapManager {
                 deposit_amount: swap.mm_deposit_status.as_ref().map(|d| d.amount),
                 deposit_detected_at: swap.mm_deposit_status.as_ref().map(|d| d.detected_at),
             },
-            settlement_tx: swap.user_withdrawal_tx,
+            settlement_tx: swap.settlement_status.as_ref().map(|s| s.tx_hash.clone()),
         })
     }
 }

@@ -13,6 +13,12 @@ chrono = { workspace = true }
 alloy = { workspace = true }
 zeroize = { workspace = true }
 secrecy = { workspace = true }
+sqlx = { workspace = true, optional = true }
+snafu = { workspace = true }
+
+[features]
+default = []
+sqlx = ["dep:sqlx"]
 
 [dev-dependencies]
 serde_json = { workspace = true }
