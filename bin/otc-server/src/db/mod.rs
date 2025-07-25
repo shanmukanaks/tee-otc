@@ -6,7 +6,7 @@ pub mod swap_repo;
 pub use quote_repo::QuoteRepository;
 pub use swap_repo::SwapRepository;
 
-use crate::error::{OtcServerError, OtcServerResult};
+use crate::error::OtcServerResult;
 use sqlx::{postgres::{PgPool, PgPoolOptions}, migrate::Migrator};
 use std::time::Duration;
 use tracing::info;
@@ -43,11 +43,11 @@ impl Database {
         Ok(Self { pool })
     }
     
-    pub fn quotes(&self) -> QuoteRepository {
+    #[must_use] pub fn quotes(&self) -> QuoteRepository {
         QuoteRepository::new(self.pool.clone())
     }
     
-    pub fn swaps(&self) -> SwapRepository {
+    #[must_use] pub fn swaps(&self) -> SwapRepository {
         SwapRepository::new(self.pool.clone())
     }
 }

@@ -5,7 +5,7 @@ use uuid::Uuid;
 
 use super::conversions::currency_to_db;
 use super::row_mappers::FromRow;
-use crate::error::{OtcServerError, OtcServerResult};
+use crate::error::OtcServerResult;
 
 #[derive(Clone)]
 pub struct QuoteRepository {
@@ -13,7 +13,7 @@ pub struct QuoteRepository {
 }
 
 impl QuoteRepository {
-    pub fn new(pool: PgPool) -> Self {
+    #[must_use] pub fn new(pool: PgPool) -> Self {
         Self { pool }
     }
     
@@ -22,7 +22,7 @@ impl QuoteRepository {
         let (to_chain, to_token, to_amount, to_decimals) = currency_to_db(&quote.to)?;
         
         sqlx::query(
-            r#"
+            r"
             INSERT INTO quotes (
                 id, 
                 from_chain, from_token, from_amount, from_decimals,
@@ -32,17 +32,17 @@ impl QuoteRepository {
                 created_at
             )
             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
-            "#,
+            ",
         )
         .bind(quote.id)
         .bind(from_chain)
         .bind(from_token)
         .bind(from_amount)
-        .bind(from_decimals as i16)
+        .bind(i16::from(from_decimals))
         .bind(to_chain)
         .bind(to_token)
         .bind(to_amount)
-        .bind(to_decimals as i16)
+        .bind(i16::from(to_decimals))
         .bind(quote.market_maker_identifier.clone())
         .bind(quote.expires_at)
         .bind(quote.created_at)
@@ -54,7 +54,7 @@ impl QuoteRepository {
     
     pub async fn get(&self, id: Uuid) -> OtcServerResult<Quote> {
         let row = sqlx::query(
-            r#"
+            r"
             SELECT 
                 id,
                 from_chain, from_token, from_amount, from_decimals,
@@ -64,7 +64,7 @@ impl QuoteRepository {
                 created_at
             FROM quotes
             WHERE id = $1
-            "#,
+            ",
         )
         .bind(id)
         .fetch_one(&self.pool)
@@ -75,7 +75,7 @@ impl QuoteRepository {
     
     pub async fn get_active_by_market_maker(&self, mm_identifier: &str) -> OtcServerResult<Vec<Quote>> {
         let rows = sqlx::query(
-            r#"
+            r"
             SELECT 
                 id,
                 from_chain, from_token, from_amount, from_decimals,
@@ -87,7 +87,7 @@ impl QuoteRepository {
             WHERE market_maker_identifier = $1 
             AND expires_at > NOW()
             ORDER BY created_at DESC
-            "#,
+            ",
         )
         .bind(mm_identifier)
         .fetch_all(&self.pool)
@@ -103,7 +103,7 @@ impl QuoteRepository {
     
     pub async fn get_expired(&self, limit: i64) -> OtcServerResult<Vec<Quote>> {
         let rows = sqlx::query(
-            r#"
+            r"
             SELECT 
                 id,
                 from_chain, from_token, from_amount, from_decimals,
@@ -115,7 +115,7 @@ impl QuoteRepository {
             WHERE expires_at <= NOW()
             ORDER BY expires_at ASC
             LIMIT $1
-            "#,
+            ",
         )
         .bind(limit)
         .fetch_all(&self.pool)
@@ -131,11 +131,11 @@ impl QuoteRepository {
     
     pub async fn delete_expired(&self, before: DateTime<Utc>) -> OtcServerResult<u64> {
         let result = sqlx::query(
-            r#"
+            r"
             DELETE FROM quotes
             WHERE expires_at < $1
             AND id NOT IN (SELECT quote_id FROM swaps)
-            "#,
+            ",
         )
         .bind(before)
         .execute(&self.pool)

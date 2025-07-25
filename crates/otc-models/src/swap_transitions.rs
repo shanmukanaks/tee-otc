@@ -18,7 +18,7 @@ pub enum TransitionError {
 pub type TransitionResult = Result<(), TransitionError>;
 
 impl Swap {
-    /// Transition to WaitingMMDeposit when user deposit is detected
+    /// Transition to `WaitingMMDeposit` when user deposit is detected
     pub fn user_deposit_detected(
         &mut self,
         tx_hash: String,
@@ -48,7 +48,7 @@ impl Swap {
         Ok(())
     }
     
-    /// Transition to WaitingConfirmations when MM deposit is detected
+    /// Transition to `WaitingConfirmations` when MM deposit is detected
     pub fn mm_deposit_detected(
         &mut self,
         tx_hash: String,
@@ -236,17 +236,17 @@ impl Swap {
     }
     
     /// Check if swap has timed out
-    pub fn is_timed_out(&self) -> bool {
+    #[must_use] pub fn is_timed_out(&self) -> bool {
         Utc::now() > self.timeout_at
     }
     
     /// Check if swap is in an active state (not completed or failed)
-    pub fn is_active(&self) -> bool {
+    #[must_use] pub fn is_active(&self) -> bool {
         !matches!(self.status, SwapStatus::Completed | SwapStatus::Failed)
     }
     
     /// Get required confirmations based on chain and amount
-    pub fn get_required_confirmations(&self) -> (u32, u32) {
+    #[must_use] pub fn get_required_confirmations(&self) -> (u32, u32) {
         // TODO: Implement logic based on chain type and amount
         // For now, return default values
         (3, 3) // (user_confirmations, mm_confirmations)

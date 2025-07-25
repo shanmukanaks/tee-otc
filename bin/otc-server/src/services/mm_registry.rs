@@ -42,7 +42,7 @@ pub struct MMRegistry {
 }
 
 impl MMRegistry {
-    pub fn new(validation_timeout: Duration) -> Self {
+    #[must_use] pub fn new(validation_timeout: Duration) -> Self {
         Self {
             connections: Arc::new(DashMap::new()),
             pending_validations: Arc::new(DashMap::new()),
@@ -76,7 +76,7 @@ impl MMRegistry {
         self.connections.remove(market_maker_id);
     }
 
-    pub fn is_connected(&self, market_maker_id: &str) -> bool {
+    #[must_use] pub fn is_connected(&self, market_maker_id: &str) -> bool {
         self.connections.contains_key(market_maker_id)
     }
 
@@ -92,18 +92,15 @@ impl MMRegistry {
             "Validating quote with market maker"
         );
 
-        let mm_connection = match self.connections.get(market_maker_id) {
-            Some(conn) => conn,
-            None => {
-                warn!(
-                    market_maker_id = %market_maker_id,
-                    "Market maker not connected"
-                );
-                let _ = response_tx.send(Err(MMRegistryError::MarketMakerNotConnected {
-                    market_maker_id: market_maker_id.to_string(),
-                }));
-                return;
-            }
+        let mm_connection = if let Some(conn) = self.connections.get(market_maker_id) { conn } else {
+            warn!(
+                market_maker_id = %market_maker_id,
+                "Market maker not connected"
+            );
+            let _ = response_tx.send(Err(MMRegistryError::MarketMakerNotConnected {
+                market_maker_id: market_maker_id.to_string(),
+            }));
+            return;
         };
 
         let request = ProtocolMessage {
@@ -156,11 +153,11 @@ impl MMRegistry {
         }
     }
 
-    pub fn get_connection_count(&self) -> usize {
+    #[must_use] pub fn get_connection_count(&self) -> usize {
         self.connections.len()
     }
 
-    pub fn get_connected_market_makers(&self) -> Vec<String> {
+    #[must_use] pub fn get_connected_market_makers(&self) -> Vec<String> {
         self.connections
             .iter()
             .map(|entry| entry.key().clone())
@@ -193,7 +190,7 @@ mod tests {
         let registry = MMRegistry::new(Duration::from_secs(5));
         let (response_tx, response_rx) = oneshot::channel();
         
-        let _ = registry.validate_quote("unknown_mm", "quote123".to_string(), response_tx).await;
+        let () = registry.validate_quote("unknown_mm", "quote123".to_string(), response_tx).await;
         
         let result = response_rx.await.unwrap();
         assert!(matches!(

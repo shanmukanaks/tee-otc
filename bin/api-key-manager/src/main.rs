@@ -133,7 +133,7 @@ fn generate_command(output: PathBuf, market_maker: Option<String>) -> Result<()>
     // Check if market maker already exists
     if api_keys.iter().any(|k| k.market_maker == market_maker) {
         return Err(Error::InvalidInput {
-            message: format!("API key for market maker '{}' already exists", market_maker),
+            message: format!("API key for market maker '{market_maker}' already exists"),
         });
     }
 
@@ -154,10 +154,10 @@ fn generate_command(output: PathBuf, market_maker: Option<String>) -> Result<()>
 
     println!("\n✅ API key generated successfully!");
     println!("\n📋 API Key Details:");
-    println!("Market Maker: {}", market_maker);
-    println!("Key ID: {}", id);
+    println!("Market Maker: {market_maker}");
+    println!("Key ID: {id}");
     println!("\n🔑 API Key (save this, it won't be shown again):");
-    println!("{}", api_key);
+    println!("{api_key}");
     println!("\n📁 Saved to: {}", output.display());
 
     Ok(())

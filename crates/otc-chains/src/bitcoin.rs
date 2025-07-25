@@ -1,9 +1,9 @@
 use crate::{ChainOperations, Result, key_derivation};
 use alloy::primitives::U256;
 use async_trait::async_trait;
-use bitcoin::secp256k1::{rand, Secp256k1, SecretKey};
+use bitcoin::secp256k1::{Secp256k1, SecretKey};
 use bitcoin::{Address, CompressedPublicKey, Network, PrivateKey};
-use bitcoincore_rpc::{Auth, Client, RpcApi};
+use bitcoincore_rpc_async::{Auth, Client, RpcApi};
 use otc_models::{DepositInfo, TxStatus, Wallet};
 use std::str::FromStr;
 use std::time::Duration;
@@ -15,8 +15,8 @@ pub struct BitcoinChain {
 }
 
 impl BitcoinChain {
-    pub fn new(rpc_url: &str, rpc_auth: Auth, network: Network) -> Result<Self> {
-        let rpc_client = Client::new(rpc_url, rpc_auth)
+    pub async fn new(rpc_url: &str, network: Network) -> Result<Self> {
+        let rpc_client = Client::new(rpc_url.to_string(), Auth::None).await
             .map_err(|_| crate::Error::Rpc {
                 message: "Failed to create Bitcoin RPC client".to_string(),
             })?;
@@ -39,7 +39,7 @@ impl ChainOperations for BitcoinChain {
         
         // Generate a new private key
         let secp = Secp256k1::new();
-        let secret_key = bitcoin::secp256k1::SecretKey::new(&mut rand::thread_rng());
+        let secret_key = bitcoin::secp256k1::SecretKey::from_slice(&salt).unwrap();
         let private_key = PrivateKey::new(secret_key, self.network);
         
         // Derive public key and address
@@ -97,7 +97,7 @@ impl ChainOperations for BitcoinChain {
             })?;
         
         // Check if transaction exists
-        match self.rpc_client.get_raw_transaction_info(&txid, None) {
+        match self.rpc_client.get_raw_transaction_verbose(&txid).await {
             Ok(tx_info) => {
                 let confirmations = tx_info.confirmations.unwrap_or(0) as u32;
                 Ok(TxStatus::Confirmed(confirmations))

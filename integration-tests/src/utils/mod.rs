@@ -1,4 +1,4 @@
-use std::{env::current_dir, path::PathBuf};
+use std::env::current_dir;
 
 use sqlx::postgres::PgConnectOptions;
 use ctor::ctor;
@@ -24,8 +24,8 @@ impl PgConnectOptionsExt for PgConnectOptions {
 
 pub async fn get_free_port() -> u16 {
     let listener = TcpListener::bind(("127.0.0.1", 0)).await.expect("Should be able to bind to port");
-    let port = listener.local_addr().expect("Should have a local address").port();
-    port
+    
+    listener.local_addr().expect("Should have a local address").port()
 }
 
 pub const TEST_MARKET_MAKER_ID: &str = "test-mm";

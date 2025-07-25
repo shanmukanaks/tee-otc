@@ -12,7 +12,7 @@ pub struct SwapRepository {
 }
 
 impl SwapRepository {
-    pub fn new(pool: PgPool) -> Self {
+    #[must_use] pub fn new(pool: PgPool) -> Self {
         Self { pool }
     }
     
@@ -31,7 +31,7 @@ impl SwapRepository {
         };
         
         sqlx::query(
-            r#"
+            r"
             INSERT INTO swaps (
                 id, quote_id, market_maker,
                 user_deposit_salt, mm_deposit_salt,
@@ -46,7 +46,7 @@ impl SwapRepository {
                 $1, $2, $3, $4, $5, $6, $7, $8,
                 $9, $10, $11, $12, $13, $14, $15, $16, $17
             )
-            "#,
+            ",
         )
         .bind(swap.id)
         .bind(swap.quote_id)
@@ -73,7 +73,7 @@ impl SwapRepository {
     
     pub async fn get(&self, id: Uuid) -> OtcServerResult<Swap> {
         let row = sqlx::query(
-            r#"
+            r"
             SELECT 
                 id, quote_id, market_maker,
                 user_deposit_salt, mm_deposit_salt,
@@ -85,7 +85,7 @@ impl SwapRepository {
                 created_at, updated_at
             FROM swaps
             WHERE id = $1
-            "#,
+            ",
         )
         .bind(id)
         .fetch_one(&self.pool)
@@ -96,11 +96,11 @@ impl SwapRepository {
     
     pub async fn update_status(&self, id: Uuid, status: SwapStatus) -> OtcServerResult<()> {
         sqlx::query(
-            r#"
+            r"
             UPDATE swaps
             SET status = $2, updated_at = NOW()
             WHERE id = $1
-            "#,
+            ",
         )
         .bind(id)
         .bind(status)
@@ -118,13 +118,13 @@ impl SwapRepository {
         let status_json = user_deposit_status_to_json(status)?;
         
         sqlx::query(
-            r#"
+            r"
             UPDATE swaps
             SET 
                 user_deposit_status = $2,
                 updated_at = NOW()
             WHERE id = $1
-            "#,
+            ",
         )
         .bind(id)
         .bind(status_json)
@@ -142,13 +142,13 @@ impl SwapRepository {
         let status_json = mm_deposit_status_to_json(status)?;
         
         sqlx::query(
-            r#"
+            r"
             UPDATE swaps
             SET 
                 mm_deposit_status = $2,
                 updated_at = NOW()
             WHERE id = $1
-            "#,
+            ",
         )
         .bind(id)
         .bind(status_json)
@@ -162,13 +162,13 @@ impl SwapRepository {
         let status_json = settlement_status_to_json(status)?;
         
         sqlx::query(
-            r#"
+            r"
             UPDATE swaps
             SET 
                 settlement_status = $2,
                 updated_at = NOW()
             WHERE id = $1
-            "#,
+            ",
         )
         .bind(id)
         .bind(status_json)
@@ -180,7 +180,7 @@ impl SwapRepository {
     
     pub async fn get_active_swaps(&self) -> OtcServerResult<Vec<Swap>> {
         let rows = sqlx::query(
-            r#"
+            r"
             SELECT 
                 id, quote_id, market_maker,
                 user_deposit_salt, mm_deposit_salt,
@@ -193,7 +193,7 @@ impl SwapRepository {
             FROM swaps
             WHERE status NOT IN ('completed', 'failed')
             ORDER BY created_at DESC
-            "#,
+            ",
         )
         .fetch_all(&self.pool)
         .await?;
@@ -219,7 +219,7 @@ impl SwapRepository {
             .transpose()?;
         
         sqlx::query(
-            r#"
+            r"
             UPDATE swaps
             SET 
                 status = $2,
@@ -231,10 +231,10 @@ impl SwapRepository {
                 mm_private_key_sent_at = $8,
                 updated_at = $9
             WHERE id = $1
-            "#,
+            ",
         )
         .bind(swap.id)
-        .bind(&swap.status)
+        .bind(swap.status)
         .bind(user_deposit_json)
         .bind(mm_deposit_json)
         .bind(settlement_json)
@@ -250,7 +250,7 @@ impl SwapRepository {
     
     pub async fn get_swaps_by_market_maker(&self, mm_identifier: &str) -> OtcServerResult<Vec<Swap>> {
         let rows = sqlx::query(
-            r#"
+            r"
             SELECT 
                 id, quote_id, market_maker,
                 user_deposit_salt, mm_deposit_salt,
@@ -263,7 +263,7 @@ impl SwapRepository {
             FROM swaps
             WHERE market_maker = $1
             ORDER BY created_at DESC
-            "#,
+            ",
         )
         .bind(mm_identifier)
         .fetch_all(&self.pool)
@@ -277,7 +277,7 @@ impl SwapRepository {
         Ok(swaps)
     }
     
-    /// Alias for get_active_swaps for consistency with monitoring service
+    /// Alias for `get_active_swaps` for consistency with monitoring service
     pub async fn get_active(&self) -> OtcServerResult<Vec<Swap>> {
         self.get_active_swaps().await
     }
@@ -296,7 +296,7 @@ impl SwapRepository {
             deposit_status.tx_hash.clone(),
             deposit_status.amount,
             deposit_status.confirmations,
-        ).map_err(|e| OtcServerError::InvalidState { message: format!("State transition failed: {}", e) })?;
+        ).map_err(|e| OtcServerError::InvalidState { message: format!("State transition failed: {e}") })?;
         
         // Update the database
         self.update(&swap).await?;
@@ -317,7 +317,7 @@ impl SwapRepository {
             deposit_status.tx_hash.clone(),
             deposit_status.amount,
             deposit_status.confirmations,
-        ).map_err(|e| OtcServerError::InvalidState { message: format!("State transition failed: {}", e) })?;
+        ).map_err(|e| OtcServerError::InvalidState { message: format!("State transition failed: {e}") })?;
         
         // Update the database
         self.update(&swap).await?;
@@ -332,7 +332,7 @@ impl SwapRepository {
     ) -> OtcServerResult<()> {
         let mut swap = self.get(swap_id).await?;
         swap.update_confirmations(Some(confirmations), None)
-            .map_err(|e| OtcServerError::InvalidState { message: format!("State transition failed: {}", e) })?;
+            .map_err(|e| OtcServerError::InvalidState { message: format!("State transition failed: {e}") })?;
         self.update(&swap).await?;
         Ok(())
     }
@@ -345,7 +345,7 @@ impl SwapRepository {
     ) -> OtcServerResult<()> {
         let mut swap = self.get(swap_id).await?;
         swap.update_confirmations(None, Some(confirmations))
-            .map_err(|e| OtcServerError::InvalidState { message: format!("State transition failed: {}", e) })?;
+            .map_err(|e| OtcServerError::InvalidState { message: format!("State transition failed: {e}") })?;
         self.update(&swap).await?;
         Ok(())
     }
@@ -354,7 +354,7 @@ impl SwapRepository {
     pub async fn confirmations_reached(&self, swap_id: Uuid) -> OtcServerResult<()> {
         let mut swap = self.get(swap_id).await?;
         swap.confirmations_reached()
-            .map_err(|e| OtcServerError::InvalidState { message: format!("State transition failed: {}", e) })?;
+            .map_err(|e| OtcServerError::InvalidState { message: format!("State transition failed: {e}") })?;
         self.update(&swap).await?;
         Ok(())
     }
@@ -363,7 +363,7 @@ impl SwapRepository {
     pub async fn settlement_completed(&self, swap_id: Uuid) -> OtcServerResult<()> {
         let mut swap = self.get(swap_id).await?;
         swap.settlement_completed(1, None) // 1 confirmation for completion
-            .map_err(|e| OtcServerError::InvalidState { message: format!("State transition failed: {}", e) })?;
+            .map_err(|e| OtcServerError::InvalidState { message: format!("State transition failed: {e}") })?;
         self.update(&swap).await?;
         Ok(())
     }
@@ -372,7 +372,7 @@ impl SwapRepository {
     pub async fn mark_failed(&self, swap_id: Uuid, reason: &str) -> OtcServerResult<()> {
         let mut swap = self.get(swap_id).await?;
         swap.mark_failed(reason.to_string())
-            .map_err(|e| OtcServerError::InvalidState { message: format!("State transition failed: {}", e) })?;
+            .map_err(|e| OtcServerError::InvalidState { message: format!("State transition failed: {e}") })?;
         self.update(&swap).await?;
         Ok(())
     }
@@ -381,7 +381,7 @@ impl SwapRepository {
     pub async fn initiate_user_refund(&self, swap_id: Uuid, reason: &str) -> OtcServerResult<()> {
         let mut swap = self.get(swap_id).await?;
         swap.initiate_user_refund(reason.to_string())
-            .map_err(|e| OtcServerError::InvalidState { message: format!("State transition failed: {}", e) })?;
+            .map_err(|e| OtcServerError::InvalidState { message: format!("State transition failed: {e}") })?;
         self.update(&swap).await?;
         Ok(())
     }
@@ -390,7 +390,7 @@ impl SwapRepository {
     pub async fn initiate_both_refunds(&self, swap_id: Uuid, reason: &str) -> OtcServerResult<()> {
         let mut swap = self.get(swap_id).await?;
         swap.initiate_both_refunds(reason.to_string())
-            .map_err(|e| OtcServerError::InvalidState { message: format!("State transition failed: {}", e) })?;
+            .map_err(|e| OtcServerError::InvalidState { message: format!("State transition failed: {e}") })?;
         self.update(&swap).await?;
         Ok(())
     }
@@ -697,7 +697,7 @@ mod tests {
         db.quotes().create(&quote).await.unwrap();
 
         // Create multiple swaps with different statuses
-        let statuses = vec![
+        let statuses = [
             SwapStatus::WaitingUserDeposit,  // Active
             SwapStatus::WaitingMMDeposit,     // Active
             SwapStatus::WaitingConfirmations, // Active
@@ -723,7 +723,7 @@ mod tests {
                 mm_deposit_salt: mm_salt,
                 user_destination_address: format!("0x{:040}", i + 100),
                 user_refund_address: format!("bc1q{:064}", i + 100),
-                status: status.clone(),
+                status: *status,
                 user_deposit_status: None,
                 mm_deposit_status: None,
                 settlement_status: None,
@@ -736,7 +736,7 @@ mod tests {
             };
 
             swap_repo.create(&swap).await.unwrap();
-            swap_ids.push((swap.id, status.clone()));
+            swap_ids.push((swap.id, *status));
         }
 
         // Get active swaps

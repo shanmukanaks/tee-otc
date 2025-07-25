@@ -46,7 +46,7 @@ impl ChainOperations for EthereumChain {
         
         info!("Created new Ethereum wallet: {}", address);
         
-        let wallet = Wallet::new(format!("{:?}", address), format!("0x{}", private_key));
+        let wallet = Wallet::new(format!("{address:?}"), format!("0x{private_key}"));
         Ok((wallet, salt))
     }
     
@@ -65,7 +65,7 @@ impl ChainOperations for EthereumChain {
             })?;
         
         let address = format!("{:?}", signer.address());
-        let private_key = format!("0x{}", hex::encode(private_key_bytes));
+        let private_key = format!("0x{}", alloy::hex::encode(private_key_bytes));
         
         debug!("Derived Ethereum wallet: {}", address);
         

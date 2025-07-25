@@ -1,3 +1,9 @@
+mod alloy_ext;
+mod bitcoin_wallet;
+pub use alloy_ext::*;
+pub use bitcoin_wallet::*;
+use snafu::ResultExt;
+
 
 pub fn handle_background_thread_result<T, E>(
     result: Option<Result<Result<T, E>, tokio::task::JoinError>>,
@@ -8,18 +14,24 @@ where
     match result {
         Some(Ok(thread_result)) => match thread_result {
             Ok(_) => Err("Background thread completed unexpectedly".into()),
-            Err(e) => Err(format!("Background thread panicked: {}", e).into()),
+            Err(e) => Err(format!("Background thread panicked: {e}").into()),
         },
-        Some(Err(e)) => Err(format!("Join set failed: {}", e).into()),
+        Some(Err(e)) => Err(format!("Join set failed: {e}").into()),
         None => Err("Join set panicked with no result".into()),
     }
 }
 
-pub fn init_logger(log_level: &str) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+
+#[derive(Debug, snafu::Snafu)]
+pub enum InitLoggerError {
+    #[snafu(display("Failed to initialize logger: {}", source))]
+    LoggerFailed { source: Box<dyn std::error::Error + Send + Sync> },
+}
+
+pub fn init_logger(log_level: &str) -> Result<(), InitLoggerError> {
     tracing_subscriber::fmt()
         .with_env_filter(log_level)
-        .try_init()
-        .map_err(|e| format!("Failed to initialize logger: {}", e))?;
+        .try_init().context(LoggerFailedSnafu)?;
     
     Ok(())
 }

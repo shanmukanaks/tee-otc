@@ -51,7 +51,7 @@ impl OtcFillClient {
 
         loop {
             match self.connect_and_run().await {
-                Ok(_) => {
+                Ok(()) => {
                     info!("WebSocket connection closed normally");
                     reconnect_attempts = 0;
                 }
@@ -64,7 +64,7 @@ impl OtcFillClient {
                     }
 
                     let delay = Duration::from_secs(
-                        self.config.reconnect_interval_secs * reconnect_attempts as u64,
+                        self.config.reconnect_interval_secs * u64::from(reconnect_attempts),
                     );
                     warn!(
                         "Reconnecting in {} seconds (attempt {}/{})",
@@ -99,7 +99,7 @@ impl OtcFillClient {
                 source: tokio_tungstenite::tungstenite::Error::Http(
                     http::Response::builder()
                         .status(400)
-                        .body(Some(format!("Failed to build request: {}", e).into_bytes()))
+                        .body(Some(format!("Failed to build request: {e}").into_bytes()))
                         .unwrap()
                 ),
             })?;

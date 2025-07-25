@@ -55,9 +55,9 @@ impl MessageHandler {
             }
 
             MMRequest::UserDeposited {
-                request_id,
+                
                 swap_id,
-                quote_id,
+                
                 deposit_address,
                 deposit_chain,
                 deposit_amount,
@@ -87,7 +87,7 @@ impl MessageHandler {
             MMRequest::SwapComplete {
                 request_id,
                 swap_id,
-                user_deposit_private_key,
+                
                 user_withdrawal_tx,
                 ..
             } => {

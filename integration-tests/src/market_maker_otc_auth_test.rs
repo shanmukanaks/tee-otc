@@ -3,9 +3,8 @@ use sqlx::{pool::PoolOptions, postgres::PgConnectOptions};
 use tokio::task::JoinSet;
 use std::time::Duration;
 use market_maker::{run_market_maker, MarketMakerArgs};
-use serde_json;
 
-use crate::utils::{get_free_port, get_whitelist_file_path, PgConnectOptionsExt, TEST_API_KEY, TEST_API_KEY_ID, TEST_MARKET_MAKER_ID, TEST_MM_WHITELIST_FILE, INTEGRATION_TEST_TIMEOUT_SECS};
+use crate::utils::{get_free_port, get_whitelist_file_path, PgConnectOptionsExt, TEST_API_KEY, TEST_API_KEY_ID, TEST_MARKET_MAKER_ID, INTEGRATION_TEST_TIMEOUT_SECS};
 
 #[sqlx::test]
 async fn test_market_maker_otc_auth(
@@ -21,19 +20,17 @@ async fn test_market_maker_otc_auth(
         database_url: connect_options.to_database_url(),
         whitelist_file: get_whitelist_file_path(),
         ..Default::default()
-    }).await.expect("OTC server should not crash") });
+    }).await.expect("OTC server should not crash"); });
 
     // Hit the otc server status endpoint every 100ms until it returns 200
     let client = reqwest::Client::new();
-    let status_url = format!("http://127.0.0.1:{}/status", otc_port);
+    let status_url = format!("http://127.0.0.1:{otc_port}/status");
     
     let start_time = std::time::Instant::now();
     let timeout = Duration::from_secs(INTEGRATION_TEST_TIMEOUT_SECS);
     
     loop {
-        if start_time.elapsed() > timeout {
-            panic!("Timeout waiting for OTC server to become ready");
-        }
+        assert!((start_time.elapsed() <= timeout), "Timeout waiting for OTC server to become ready");
         
         tokio::time::sleep(Duration::from_millis(100)).await;
         
@@ -50,22 +47,20 @@ async fn test_market_maker_otc_auth(
         market_maker_id: TEST_MARKET_MAKER_ID.to_string(),
         api_key_id: TEST_API_KEY_ID.to_string(),
         api_key: TEST_API_KEY.to_string(),
-        otc_ws_url: format!("ws://127.0.0.1:{}/ws/mm", otc_port),
+        otc_ws_url: format!("ws://127.0.0.1:{otc_port}/ws/mm"),
         auto_accept: true,
         log_level: "info".to_string(),
     }).await.expect("Market maker should not crash");
     });
 
     
-    let connected_url = format!("http://127.0.0.1:{}/api/v1/market-makers/connected", otc_port);
+    let connected_url = format!("http://127.0.0.1:{otc_port}/api/v1/market-makers/connected");
     
     let start_time = std::time::Instant::now();
     let timeout = Duration::from_secs(INTEGRATION_TEST_TIMEOUT_SECS);
     
     loop {
-        if start_time.elapsed() > timeout {
-            panic!("Timeout waiting for market maker to connect");
-        }
+        assert!((start_time.elapsed() <= timeout), "Timeout waiting for market maker to connect");
         
         tokio::time::sleep(Duration::from_millis(100)).await;
         

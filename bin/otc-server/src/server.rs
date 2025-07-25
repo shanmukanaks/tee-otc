@@ -41,7 +41,7 @@ pub async fn run_server(args: OtcServerArgs) -> Result<()> {
     // Load configuration
     let settings = Arc::new(Settings::load().map_err(|e| crate::Error::DatabaseInit { 
         source: crate::error::OtcServerError::InvalidData { 
-            message: format!("Failed to load settings: {}", e) 
+            message: format!("Failed to load settings: {e}") 
         }
     })?);
     let db = Database::connect(&args.database_url)
@@ -52,13 +52,9 @@ pub async fn run_server(args: OtcServerArgs) -> Result<()> {
     let mut chain_registry = ChainRegistry::new();
     
     // Initialize Bitcoin chain (mock for now)
-    let bitcoin_chain = BitcoinChain::new(
-        "http://localhost:8332",
-        bitcoincore_rpc::Auth::UserPass("user".to_string(), "pass".to_string()),
-        bitcoin::Network::Testnet,
-    ).map_err(|e| crate::Error::DatabaseInit { 
+    let bitcoin_chain = BitcoinChain::new("http://localhost:8332", bitcoin::Network::Testnet).await.map_err(|e| crate::Error::DatabaseInit { 
         source: crate::error::OtcServerError::InvalidData { 
-            message: format!("Failed to initialize Bitcoin chain: {}", e) 
+            message: format!("Failed to initialize Bitcoin chain: {e}") 
         }
     })?;
     chain_registry.register(otc_models::ChainType::Bitcoin, Arc::new(bitcoin_chain));
@@ -69,7 +65,7 @@ pub async fn run_server(args: OtcServerArgs) -> Result<()> {
         1, // mainnet chain ID
     ).await.map_err(|e| crate::Error::DatabaseInit { 
         source: crate::error::OtcServerError::InvalidData { 
-            message: format!("Failed to initialize Ethereum chain: {}", e) 
+            message: format!("Failed to initialize Ethereum chain: {e}") 
         }
     })?;
     chain_registry.register(otc_models::ChainType::Ethereum, Arc::new(ethereum_chain));
@@ -207,7 +203,7 @@ async fn handle_socket(mut socket: WebSocket) {
                     info!("Received: {}", text);
                     
                     if socket
-                        .send(axum::extract::ws::Message::Text(format!("Echo: {}", text)))
+                        .send(axum::extract::ws::Message::Text(format!("Echo: {text}")))
                         .await
                         .is_err()
                     {

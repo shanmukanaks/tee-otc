@@ -12,7 +12,7 @@ impl ValidationStrategy {
     }
 
     /// Validate whether to accept a quote
-    /// Returns (accepted, rejection_reason)
+    /// Returns (accepted, `rejection_reason`)
     pub fn validate_quote(&self, quote_id: &Uuid) -> (bool, Option<String>) {
         if self.auto_accept {
             info!("Auto-accepting quote {} per configuration", quote_id);

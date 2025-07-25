@@ -64,7 +64,7 @@ pub enum MMRequest {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum MMResponse {
-    /// Response to ValidateQuote
+    /// Response to `ValidateQuote`
     QuoteValidated {
         request_id: Uuid,
         quote_id: Uuid,
@@ -77,7 +77,7 @@ pub enum MMResponse {
         timestamp: DateTime<Utc>,
     },
     
-    /// Response to UserDeposited - MM has initiated deposit
+    /// Response to `UserDeposited` - MM has initiated deposit
     DepositInitiated {
         request_id: Uuid,
         swap_id: Uuid,
@@ -88,7 +88,7 @@ pub enum MMResponse {
         timestamp: DateTime<Utc>,
     },
     
-    /// Acknowledgment of SwapComplete
+    /// Acknowledgment of `SwapComplete`
     SwapCompleteAck {
         request_id: Uuid,
         swap_id: Uuid,

@@ -39,7 +39,7 @@ pub struct SwapMonitoringService {
 }
 
 impl SwapMonitoringService {
-    pub fn new(
+    #[must_use] pub fn new(
         db: Database,
         settings: Arc<Settings>,
         chain_registry: Arc<ChainRegistry>,

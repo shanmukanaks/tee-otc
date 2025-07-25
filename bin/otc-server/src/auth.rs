@@ -61,7 +61,7 @@ impl ApiKeyStore {
     }
     
     /// Check if a market maker exists
-    pub fn contains_market_maker(&self, market_maker: &str) -> bool {
+    #[must_use] pub fn contains_market_maker(&self, market_maker: &str) -> bool {
         self.keys.contains_key(market_maker)
     }
     
@@ -80,7 +80,7 @@ impl ApiKeyStore {
     }
     
     /// Get API key by UUID
-    pub fn get_by_id(&self, id: &Uuid) -> Option<&ApiKey> {
+    #[must_use] pub fn get_by_id(&self, id: &Uuid) -> Option<&ApiKey> {
         self.keys_by_id.get(id)
     }
 }
