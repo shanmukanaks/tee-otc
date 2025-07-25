@@ -22,13 +22,17 @@ pub struct Currency {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Quote {
     pub id: Uuid,
+
+    /// The market maker that created the quote
+    pub market_maker_id: Uuid,
     
-    // Conversion details
-    pub from: Currency,  // Amount user will send
-    pub to: Currency,    // Amount user will receive
+    /// The currency the user will send
+    pub from: Currency,
     
-    pub market_maker_identifier: String,
+    /// The currency the user will receive
+    pub to: Currency,
     
+    /// The expiration time of the quote
     pub expires_at: DateTime<Utc>,
     pub created_at: DateTime<Utc>,
 }

@@ -33,7 +33,7 @@ impl SwapRepository {
         sqlx::query(
             r"
             INSERT INTO swaps (
-                id, quote_id, market_maker,
+                id, quote_id, market_maker_id,
                 user_deposit_salt, mm_deposit_salt,
                 user_destination_address, user_refund_address,
                 status,
@@ -50,7 +50,7 @@ impl SwapRepository {
         )
         .bind(swap.id)
         .bind(swap.quote_id)
-        .bind(&swap.market_maker)
+        .bind(&swap.market_maker_id)
         .bind(&swap.user_deposit_salt[..])
         .bind(&swap.mm_deposit_salt[..])
         .bind(&swap.user_destination_address)
@@ -75,7 +75,7 @@ impl SwapRepository {
         let row = sqlx::query(
             r"
             SELECT 
-                id, quote_id, market_maker,
+                id, quote_id, market_maker_id,
                 user_deposit_salt, mm_deposit_salt,
                 user_destination_address, user_refund_address,
                 status,
@@ -182,7 +182,7 @@ impl SwapRepository {
         let rows = sqlx::query(
             r"
             SELECT 
-                id, quote_id, market_maker,
+                id, quote_id, market_maker_id,
                 user_deposit_salt, mm_deposit_salt,
                 user_destination_address, user_refund_address,
                 status,
@@ -252,7 +252,7 @@ impl SwapRepository {
         let rows = sqlx::query(
             r"
             SELECT 
-                id, quote_id, market_maker,
+                id, quote_id, market_maker_id,
                 user_deposit_salt, mm_deposit_salt,
                 user_destination_address, user_refund_address,
                 status,
@@ -428,7 +428,7 @@ mod tests {
                 amount: U256::from(500000000000000000u64), // 0.5 ETH
                 decimals: 18,
             },
-            market_maker_identifier: "test-mm-1".to_string(),
+            market_maker_id: Uuid::new_v4(),
             expires_at: Utc::now() + Duration::hours(1),
             created_at: Utc::now(),
         };
@@ -446,7 +446,7 @@ mod tests {
         let original_swap = Swap {
             id: Uuid::new_v4(),
             quote_id: quote.id,
-            market_maker: "test-mm-1".to_string(),
+            market_maker_id: quote.market_maker_id,
             user_deposit_salt: user_salt,
             mm_deposit_salt: mm_salt,
             user_destination_address: "0x1234567890123456789012345678901234567890".to_string(),
@@ -472,7 +472,7 @@ mod tests {
         // Validate data
         assert_eq!(retrieved_swap.id, original_swap.id);
         assert_eq!(retrieved_swap.quote_id, original_swap.quote_id);
-        assert_eq!(retrieved_swap.market_maker, original_swap.market_maker);
+        assert_eq!(retrieved_swap.market_maker_id, original_swap.market_maker_id);
         assert_eq!(retrieved_swap.user_deposit_salt, original_swap.user_deposit_salt);
         assert_eq!(retrieved_swap.mm_deposit_salt, original_swap.mm_deposit_salt);
         assert_eq!(retrieved_swap.user_destination_address, original_swap.user_destination_address);
@@ -503,7 +503,7 @@ mod tests {
                 amount: U256::from(1000000000000000000u64),
                 decimals: 18,
             },
-            market_maker_identifier: "test-mm-2".to_string(),
+            market_maker_id: Uuid::new_v4(),
             expires_at: Utc::now() + Duration::hours(1),
             created_at: Utc::now(),
         };
@@ -520,7 +520,7 @@ mod tests {
         let original_swap = Swap {
             id: Uuid::new_v4(),
             quote_id: quote.id,
-            market_maker: "test-mm-2".to_string(),
+            market_maker_id: quote.market_maker_id,
             user_deposit_salt: user_salt,
             mm_deposit_salt: mm_salt,
             user_destination_address: "0x9876543210987654321098765432109876543210".to_string(),
@@ -592,7 +592,7 @@ mod tests {
                 amount: U256::from(500000000000000000u64),
                 decimals: 18,
             },
-            market_maker_identifier: "test-mm-3".to_string(),
+            market_maker_id: Uuid::new_v4(),
             expires_at: Utc::now() + Duration::hours(1),
             created_at: Utc::now(),
         };
@@ -608,7 +608,7 @@ mod tests {
         let swap = Swap {
             id: Uuid::new_v4(),
             quote_id: quote.id,
-            market_maker: "test-mm-3".to_string(),
+            market_maker_id: quote.market_maker_id,
             user_deposit_salt: user_salt,
             mm_deposit_salt: mm_salt,
             user_destination_address: "0xabcdef1234567890abcdef1234567890abcdef12".to_string(),
@@ -690,7 +690,7 @@ mod tests {
                 amount: U256::from(500000000000000000u64),
                 decimals: 18,
             },
-            market_maker_identifier: "test-mm-4".to_string(),
+            market_maker_id: Uuid::new_v4(),
             expires_at: Utc::now() + Duration::hours(1),
             created_at: Utc::now(),
         };
@@ -718,7 +718,7 @@ mod tests {
             let swap = Swap {
                 id: Uuid::new_v4(),
                 quote_id: quote.id,
-                market_maker: "test-mm-4".to_string(),
+                market_maker_id: quote.market_maker_id,
                 user_deposit_salt: user_salt,
                 mm_deposit_salt: mm_salt,
                 user_destination_address: format!("0x{:040}", i + 100),

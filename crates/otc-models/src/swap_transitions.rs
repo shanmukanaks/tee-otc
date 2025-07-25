@@ -263,7 +263,7 @@ mod tests {
         Swap {
             id: Uuid::new_v4(),
             quote_id: Uuid::new_v4(),
-            market_maker: "test-mm".to_string(),
+            market_maker_id: Uuid::new_v4(),
             user_deposit_salt: [0u8; 32],
             mm_deposit_salt: [0u8; 32],
             user_destination_address: "0x123".to_string(),

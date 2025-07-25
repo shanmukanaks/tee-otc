@@ -27,7 +27,7 @@ impl QuoteRepository {
                 id, 
                 from_chain, from_token, from_amount, from_decimals,
                 to_chain, to_token, to_amount, to_decimals,
-                market_maker_identifier, 
+                market_maker_id, 
                 expires_at, 
                 created_at
             )
@@ -43,7 +43,7 @@ impl QuoteRepository {
         .bind(to_token)
         .bind(to_amount)
         .bind(i16::from(to_decimals))
-        .bind(quote.market_maker_identifier.clone())
+        .bind(quote.market_maker_id)
         .bind(quote.expires_at)
         .bind(quote.created_at)
         .execute(&self.pool)
@@ -59,7 +59,7 @@ impl QuoteRepository {
                 id,
                 from_chain, from_token, from_amount, from_decimals,
                 to_chain, to_token, to_amount, to_decimals,
-                market_maker_identifier,
+                market_maker_id,
                 expires_at,
                 created_at
             FROM quotes
@@ -73,23 +73,23 @@ impl QuoteRepository {
         Quote::from_row(&row)
     }
     
-    pub async fn get_active_by_market_maker(&self, mm_identifier: &str) -> OtcServerResult<Vec<Quote>> {
+    pub async fn get_active_by_market_maker(&self, mm_id: Uuid) -> OtcServerResult<Vec<Quote>> {
         let rows = sqlx::query(
             r"
             SELECT 
                 id,
                 from_chain, from_token, from_amount, from_decimals,
                 to_chain, to_token, to_amount, to_decimals,
-                market_maker_identifier,
+                market_maker_id,
                 expires_at,
                 created_at
             FROM quotes
-            WHERE market_maker_identifier = $1 
+            WHERE market_maker_id = $1 
             AND expires_at > NOW()
             ORDER BY created_at DESC
             ",
         )
-        .bind(mm_identifier)
+        .bind(mm_id)
         .fetch_all(&self.pool)
         .await?;
         
@@ -108,7 +108,7 @@ impl QuoteRepository {
                 id,
                 from_chain, from_token, from_amount, from_decimals,
                 to_chain, to_token, to_amount, to_decimals,
-                market_maker_identifier,
+                market_maker_id,
                 expires_at,
                 created_at
             FROM quotes
@@ -174,7 +174,7 @@ mod tests {
                 amount: U256::from(500000000000000000u64), // 0.5 ETH in wei
                 decimals: 18,
             },
-            market_maker_identifier: "test-mm-1".to_string(),
+            market_maker_id: Uuid::new_v4(),
             expires_at: Utc::now() + Duration::minutes(10),
             created_at: Utc::now(),
         };
@@ -187,7 +187,7 @@ mod tests {
         
         // Validate all fields match
         assert_eq!(retrieved_quote.id, original_quote.id);
-        assert_eq!(retrieved_quote.market_maker_identifier, original_quote.market_maker_identifier);
+        assert_eq!(retrieved_quote.market_maker_id, original_quote.market_maker_id);
         
         // Validate from currency
         assert_eq!(retrieved_quote.from.chain, original_quote.from.chain);
@@ -227,7 +227,7 @@ mod tests {
                 amount: U256::from(1000000000000000000000u128), // 1000 DAI (18 decimals)
                 decimals: 18,
             },
-            market_maker_identifier: "test-mm-2".to_string(),
+            market_maker_id: Uuid::new_v4(),
             expires_at: Utc::now() + Duration::minutes(5),
             created_at: Utc::now(),
         };
@@ -280,7 +280,7 @@ mod tests {
                 amount: U256::from(21000000u64) * U256::from(100000000u64), // 21M BTC in sats
                 decimals: 8,
             },
-            market_maker_identifier: "test-mm-3".to_string(),
+            market_maker_id: Uuid::new_v4(),
             expires_at: Utc::now() + Duration::hours(1),
             created_at: Utc::now(),
         };
@@ -302,7 +302,7 @@ mod tests {
         let db = Database::from_pool(pool.clone()).await.unwrap();
         let quote_repo = db.quotes();
         
-        let mm_identifier = "test-mm-active";
+        let mm_id = Uuid::new_v4();
         
         // Create multiple quotes - some expired, some active
         let expired_quote = Quote {
@@ -319,7 +319,7 @@ mod tests {
                 amount: U256::from(1000000000000000000u64),
                 decimals: 18,
             },
-            market_maker_identifier: mm_identifier.to_string(),
+            market_maker_id: mm_id,
             expires_at: Utc::now() - Duration::hours(1), // Already expired
             created_at: Utc::now() - Duration::hours(2),
         };
@@ -338,7 +338,7 @@ mod tests {
                 amount: U256::from(2000000000000000000u64),
                 decimals: 18,
             },
-            market_maker_identifier: mm_identifier.to_string(),
+            market_maker_id: mm_id,
             expires_at: Utc::now() + Duration::minutes(30),
             created_at: Utc::now(),
         };
@@ -357,7 +357,7 @@ mod tests {
                 amount: U256::from(300000u64),
                 decimals: 8,
             },
-            market_maker_identifier: mm_identifier.to_string(),
+            market_maker_id: mm_id,
             expires_at: Utc::now() + Duration::hours(1),
             created_at: Utc::now(),
         };
@@ -368,7 +368,7 @@ mod tests {
         quote_repo.create(&active_quote2).await.unwrap();
         
         // Get active quotes
-        let active_quotes = quote_repo.get_active_by_market_maker(mm_identifier).await.unwrap();
+        let active_quotes = quote_repo.get_active_by_market_maker(mm_id).await.unwrap();
         
         // Should only return the two active quotes
         assert_eq!(active_quotes.len(), 2);

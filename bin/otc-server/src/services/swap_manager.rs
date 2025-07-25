@@ -21,8 +21,6 @@ pub enum SwapError {
     #[snafu(display("Quote has expired"))]
     QuoteExpired,
     
-    #[snafu(display("Market maker mismatch: quote has '{}', request has '{}'", quote_mm, request_mm))]
-    MarketMakerMismatch { quote_mm: String, request_mm: String },
     
     #[snafu(display("Market maker rejected the quote"))]
     MarketMakerRejected,
@@ -91,7 +89,7 @@ impl SwapManager {
     pub async fn create_swap(&self, request: CreateSwapRequest) -> SwapResult<CreateSwapResponse> {
         // 1. Validate quote exists
         let quote = self.db.quotes()
-            .get(request.quote_id)
+            .get(request.quote.id)
             .await
             .context(DatabaseSnafu)?;
         
@@ -99,31 +97,23 @@ impl SwapManager {
         if quote.expires_at < Utc::now() {
             return Err(SwapError::QuoteExpired);
         }
-        
-        // 3. Validate market maker matches
-        if quote.market_maker_identifier != request.market_maker_identifier {
-            return Err(SwapError::MarketMakerMismatch {
-                quote_mm: quote.market_maker_identifier,
-                request_mm: request.market_maker_identifier,
-            });
-        }
 
         
-        // 4. Ask market maker if they'll fill this quote
-        info!("Validating quote {} with market maker {}", quote.id, quote.market_maker_identifier);
+        // 3    . Ask market maker if they'll fill this quote
+        info!("Validating quote {} with market maker {}", quote.id, quote.market_maker_id);
         
         // Check if MM is connected
-        if !self.mm_registry.is_connected(&quote.market_maker_identifier) {
-            warn!("Market maker {} not connected, rejecting swap", quote.market_maker_identifier);
+        if !self.mm_registry.is_connected(quote.market_maker_id) {
+            warn!("Market maker {} not connected, rejecting swap", quote.market_maker_id);
             return Err(SwapError::MarketMakerNotConnected {
-                market_maker_id: quote.market_maker_identifier,
+                market_maker_id: quote.market_maker_id.to_string(),
             });
         }
         
         // Send validation request with timeout
         let (response_tx, response_rx) = oneshot::channel();
         self.mm_registry.validate_quote(
-            &quote.market_maker_identifier,
+            quote.market_maker_id,
             quote.id.to_string(),
             response_tx,
         ).await;
@@ -171,7 +161,7 @@ impl SwapManager {
         let swap = Swap {
             id: swap_id,
             quote_id: quote.id,
-            market_maker: quote.market_maker_identifier.clone(),
+            market_maker_id: quote.market_maker_id,
             user_deposit_salt,
             mm_deposit_salt,
             user_destination_address: request.user_destination_address,

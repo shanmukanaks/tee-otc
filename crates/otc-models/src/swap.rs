@@ -8,7 +8,7 @@ use uuid::Uuid;
 pub struct Swap {
     pub id: Uuid,
     pub quote_id: Uuid,
-    pub market_maker: String,
+    pub market_maker_id: Uuid,
     
     // Salts for deterministic wallet generation
     pub user_deposit_salt: [u8; 32],

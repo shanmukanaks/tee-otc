@@ -22,7 +22,7 @@ impl<'r> FromRow<'r> for Quote {
         let to_token: serde_json::Value = row.try_get("to_token")?;
         let to_amount: String = row.try_get("to_amount")?;
         let to_decimals: i16 = row.try_get("to_decimals")?;
-        let market_maker_identifier: String = row.try_get("market_maker_identifier")?;
+        let market_maker_id: Uuid = row.try_get("market_maker_id")?;
         let expires_at: DateTime<Utc> = row.try_get("expires_at")?;
         let created_at: DateTime<Utc> = row.try_get("created_at")?;
         
@@ -33,7 +33,7 @@ impl<'r> FromRow<'r> for Quote {
             id,
             from,
             to,
-            market_maker_identifier,
+            market_maker_id,
             expires_at,
             created_at,
         })
@@ -44,7 +44,7 @@ impl<'r> FromRow<'r> for Swap {
     fn from_row(row: &'r PgRow) -> OtcServerResult<Self> {
         let id: Uuid = row.try_get("id")?;
         let quote_id: Uuid = row.try_get("quote_id")?;
-        let market_maker: String = row.try_get("market_maker")?;
+        let market_maker_id: Uuid = row.try_get("market_maker_id")?;
         
         // Get salts as Vec<u8> from database and convert to [u8; 32]
         let user_deposit_salt_vec: Vec<u8> = row.try_get("user_deposit_salt")?;
@@ -100,7 +100,7 @@ impl<'r> FromRow<'r> for Swap {
         Ok(Swap {
             id,
             quote_id,
-            market_maker,
+            market_maker_id,
             user_deposit_salt,
             mm_deposit_salt,
             user_destination_address,

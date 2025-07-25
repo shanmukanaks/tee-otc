@@ -32,7 +32,7 @@ CREATE TABLE quotes (
     to_amount TEXT NOT NULL, -- U256 stored as string
     to_decimals SMALLINT NOT NULL,
     
-    market_maker_identifier VARCHAR(255) NOT NULL,
+    market_maker_id UUID NOT NULL,
     expires_at TIMESTAMPTZ NOT NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -41,7 +41,7 @@ CREATE TABLE quotes (
 CREATE TABLE swaps (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     quote_id UUID NOT NULL REFERENCES quotes(id),
-    market_maker VARCHAR(255) NOT NULL,
+    market_maker_id UUID NOT NULL,
     
     -- Salt columns for deterministic wallet generation
     user_deposit_salt BYTEA NOT NULL,
@@ -74,11 +74,11 @@ CREATE TABLE swaps (
 );
 
 -- Create indexes for efficient queries
-CREATE INDEX idx_quotes_market_maker ON quotes(market_maker_identifier);
+CREATE INDEX idx_quotes_market_maker ON quotes(market_maker_id);
 CREATE INDEX idx_quotes_expires_at ON quotes(expires_at);
 
 CREATE INDEX idx_swaps_quote_id ON swaps(quote_id);
-CREATE INDEX idx_swaps_market_maker ON swaps(market_maker);
+CREATE INDEX idx_swaps_market_maker ON swaps(market_maker_id);
 CREATE INDEX idx_swaps_status ON swaps(status);
 
 -- Indexes for monitoring active swaps
@@ -89,7 +89,7 @@ CREATE INDEX idx_swaps_timeout ON swaps(timeout_at)
 WHERE status NOT IN ('completed', 'failed');
 
 -- Combined index for market maker queries
-CREATE INDEX idx_swaps_market_maker_active ON swaps(market_maker, status)
+CREATE INDEX idx_swaps_market_maker_active ON swaps(market_maker_id, status)
 WHERE status NOT IN ('completed', 'failed');
 
 -- Create update trigger for updated_at

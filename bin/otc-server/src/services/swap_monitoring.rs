@@ -168,7 +168,7 @@ impl SwapMonitoringService {
                 .context(DatabaseSnafu)?;
             
             // TODO: Notify market maker about user deposit
-            info!("TODO: Notify market maker {} about user deposit", swap.market_maker);
+            info!("TODO: Notify market maker {} about user deposit", swap.market_maker_id);
         }
         
         Ok(())
@@ -316,7 +316,7 @@ impl SwapMonitoringService {
                 .context(DatabaseSnafu)?;
             
             // TODO: Send private key to market maker
-            info!("TODO: Send user private key to market maker {}", swap.market_maker);
+            info!("TODO: Send user private key to market maker {}", swap.market_maker_id);
         }
         
         Ok(())

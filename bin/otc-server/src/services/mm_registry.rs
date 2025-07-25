@@ -29,14 +29,14 @@ pub enum MMRegistryError {
 type Result<T, E = MMRegistryError> = std::result::Result<T, E>;
 
 pub struct MarketMakerConnection {
-    pub id: String,
+    pub id: Uuid,
     pub sender: mpsc::Sender<ProtocolMessage<MMRequest>>,
     pub protocol_version: String,
 }
 
 #[derive(Clone)]
 pub struct MMRegistry {
-    connections: Arc<DashMap<String, MarketMakerConnection>>,
+    connections: Arc<DashMap<Uuid, MarketMakerConnection>>,
     pending_validations: Arc<DashMap<String, oneshot::Sender<Result<bool>>>>,
     validation_timeout: Duration,
 }
@@ -52,7 +52,7 @@ impl MMRegistry {
 
     pub fn register(
         &self,
-        market_maker_id: String,
+        market_maker_id: Uuid,
         sender: mpsc::Sender<ProtocolMessage<MMRequest>>,
         protocol_version: String,
     ) {
@@ -63,7 +63,7 @@ impl MMRegistry {
         );
         
         let connection = MarketMakerConnection {
-            id: market_maker_id.clone(),
+            id: market_maker_id,
             sender,
             protocol_version,
         };
@@ -71,18 +71,18 @@ impl MMRegistry {
         self.connections.insert(market_maker_id, connection);
     }
 
-    pub fn unregister(&self, market_maker_id: &str) {
+    pub fn unregister(&self, market_maker_id: Uuid) {
         info!(market_maker_id = %market_maker_id, "Unregistering market maker connection");
-        self.connections.remove(market_maker_id);
+        self.connections.remove(&market_maker_id);
     }
 
-    #[must_use] pub fn is_connected(&self, market_maker_id: &str) -> bool {
-        self.connections.contains_key(market_maker_id)
+    #[must_use] pub fn is_connected(&self, market_maker_id: Uuid) -> bool {
+        self.connections.contains_key(&market_maker_id)
     }
 
     pub async fn validate_quote(
         &self,
-        market_maker_id: &str,
+        market_maker_id: Uuid,
         quote_id: String,
         response_tx: oneshot::Sender<Result<bool>>,
     ) {
@@ -92,7 +92,7 @@ impl MMRegistry {
             "Validating quote with market maker"
         );
 
-        let mm_connection = if let Some(conn) = self.connections.get(market_maker_id) { conn } else {
+        let mm_connection = if let Some(conn) = self.connections.get(&market_maker_id) { conn } else {
             warn!(
                 market_maker_id = %market_maker_id,
                 "Market maker not connected"
@@ -131,7 +131,7 @@ impl MMRegistry {
 
     pub fn handle_validation_response(
         &self,
-        market_maker_id: &str,
+        market_maker_id: Uuid,
         quote_id: &str,
         accepted: bool,
     ) {
@@ -157,7 +157,7 @@ impl MMRegistry {
         self.connections.len()
     }
 
-    #[must_use] pub fn get_connected_market_makers(&self) -> Vec<String> {
+    #[must_use] pub fn get_connected_market_makers(&self) -> Vec<Uuid> {
         self.connections
             .iter()
             .map(|entry| entry.key().clone())
@@ -173,15 +173,16 @@ mod tests {
     async fn test_register_unregister() {
         let registry = MMRegistry::new(Duration::from_secs(5));
         let (tx, _rx) = mpsc::channel(10);
+        let mm_id = Uuid::new_v4();
         
         // Register a market maker
-        registry.register("mm1".to_string(), tx, "1.0.0".to_string());
-        assert!(registry.is_connected("mm1"));
+        registry.register(mm_id, tx, "1.0.0".to_string());
+        assert!(registry.is_connected(mm_id));
         assert_eq!(registry.get_connection_count(), 1);
         
         // Unregister
-        registry.unregister("mm1");
-        assert!(!registry.is_connected("mm1"));
+        registry.unregister(mm_id);
+        assert!(!registry.is_connected(mm_id));
         assert_eq!(registry.get_connection_count(), 0);
     }
 
@@ -189,8 +190,10 @@ mod tests {
     async fn test_validate_quote_not_connected() {
         let registry = MMRegistry::new(Duration::from_secs(5));
         let (response_tx, response_rx) = oneshot::channel();
+        let unknown_mm_id = Uuid::new_v4();
+
         
-        let () = registry.validate_quote("unknown_mm", "quote123".to_string(), response_tx).await;
+        let () = registry.validate_quote(unknown_mm_id, "quote123".to_string(), response_tx).await;
         
         let result = response_rx.await.unwrap();
         assert!(matches!(

@@ -233,7 +233,6 @@ async fn create_swap(
         .map_err(|e| match e {
             crate::services::swap_manager::SwapError::QuoteNotFound { .. } => crate::error::OtcServerError::NotFound,
             crate::services::swap_manager::SwapError::QuoteExpired => crate::error::OtcServerError::BadRequest { message: "Quote has expired".to_string() },
-            crate::services::swap_manager::SwapError::MarketMakerMismatch { .. } => crate::error::OtcServerError::BadRequest { message: e.to_string() },
             crate::services::swap_manager::SwapError::MarketMakerRejected => crate::error::OtcServerError::Conflict { message: "Market maker rejected the quote".to_string() },
             crate::services::swap_manager::SwapError::MarketMakerNotConnected { .. } => crate::error::OtcServerError::ServiceUnavailable { service: "market_maker".to_string() },
             crate::services::swap_manager::SwapError::MarketMakerValidationTimeout => crate::error::OtcServerError::Timeout { message: "Market maker validation timeout".to_string() },
@@ -262,7 +261,7 @@ async fn get_swap(
 
 #[derive(Serialize)]
 struct ConnectedMarketMakersResponse {
-    market_makers: Vec<String>,
+    market_makers: Vec<Uuid>,
 }
 
 async fn get_connected_market_makers(
@@ -275,6 +274,15 @@ async fn get_connected_market_makers(
 async fn handle_mm_socket(socket: WebSocket, state: AppState, market_maker_id: String) {
     info!("Market maker {} WebSocket connection established", market_maker_id);
     
+    // Parse market_maker_id as UUID
+    let mm_uuid = match Uuid::parse_str(&market_maker_id) {
+        Ok(uuid) => uuid,
+        Err(e) => {
+            error!("Invalid market maker UUID {}: {}", market_maker_id, e);
+            return;
+        }
+    };
+    
     // Channel for sending messages to the MM
     let (tx, mut rx) = mpsc::channel::<ProtocolMessage<MMRequest>>(100);
     
@@ -283,7 +291,7 @@ async fn handle_mm_socket(socket: WebSocket, state: AppState, market_maker_id: S
     
     // Register the MM immediately (already authenticated via headers)
     state.mm_registry.register(
-        market_maker_id.clone(),
+        mm_uuid,
         tx.clone(),
         "1.0.0".to_string(), // Default protocol version
     );
@@ -348,7 +356,7 @@ async fn handle_mm_socket(socket: WebSocket, state: AppState, market_maker_id: S
                                     mm_id, quote_id, accepted
                                 );
                                 state.mm_registry.handle_validation_response(
-                                    &mm_id,
+                                    mm_uuid,
                                     &quote_id.to_string(),
                                     *accepted,
                                 );
@@ -386,6 +394,6 @@ async fn handle_mm_socket(socket: WebSocket, state: AppState, market_maker_id: S
     }
     
     // Unregister on disconnect
-    state.mm_registry.unregister(&mm_id);
+    state.mm_registry.unregister(mm_uuid);
     info!("Market maker {} unregistered", mm_id);
 }
