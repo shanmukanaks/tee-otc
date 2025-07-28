@@ -2,6 +2,7 @@
 
 pub mod bitcoin_devnet;
 pub mod evm_devnet;
+pub mod token_indexerd;
 
 pub use bitcoin_devnet::BitcoinDevnet;
 use common::P2WPKHBitcoinWallet;
@@ -48,10 +49,7 @@ pub struct RiftDevnetCache {
 const CACHE_DIR_NAME: &str = "rift-devnet";
 const BITCOIN_DATADIR_NAME: &str = "bitcoin-datadir";
 const ESPLORA_DATADIR_NAME: &str = "esplora-datadir";
-const BITCOIN_DATA_ENGINE_DB_NAME: &str = "bitcoin-data-engine-db";
 const ANVIL_DATADIR_NAME: &str = "anvil-datadir";
-const RIFT_INDEXER_DB_NAME: &str = "data-engine-db";
-const BITCOIN_CHECKPOINT_LEAVES_NAME: &str = "bitcoin-checkpoint-leaves.bin";
 const ERROR_MESSAGE: &str = "Cache must be populated before utilizing it,";
 
 pub fn get_new_temp_dir() -> Result<tempfile::TempDir> {
@@ -155,25 +153,14 @@ impl RiftDevnetCache {
         Ok(temp_dir)
     }
 
-    pub async fn create_bitcoin_data_engine_db(&self) -> Result<tempfile::TempDir> {
-        self.copy_cached_dir(BITCOIN_DATA_ENGINE_DB_NAME, "bitcoin data engine db")
-            .await
-    }
 
-    pub async fn create_rift_indexer_db(&self) -> Result<tempfile::TempDir> {
-        self.copy_cached_dir(RIFT_INDEXER_DB_NAME, "rift indexer db")
-            .await
-    }
+
 
     pub async fn create_electrsd_datadir(&self) -> Result<tempfile::TempDir> {
         self.copy_cached_dir(ESPLORA_DATADIR_NAME, "electrsd datadir")
             .await
     }
 
-    pub async fn create_bitcoin_checkpoint_leaves(&self) -> Result<NamedTempFile> {
-        self.copy_cached_file(BITCOIN_CHECKPOINT_LEAVES_NAME, "bitcoin checkpoint leaves")
-            .await
-    }
 
     pub async fn create_anvil_datadir(&self) -> Result<tempfile::TempDir> {
         self.copy_cached_dir(ANVIL_DATADIR_NAME, "anvil datadir")
@@ -376,6 +363,7 @@ pub struct RiftDevnetBuilder {
     funded_bitcoin_addreses: Vec<String>,
     fork_config: Option<ForkConfig>,
     using_esplora: bool,
+    using_token_indexer: bool,
 }
 
 impl RiftDevnetBuilder {
@@ -392,6 +380,7 @@ impl RiftDevnetBuilder {
             funded_bitcoin_addreses: vec![],
             fork_config: None,
             using_esplora: true,
+            using_token_indexer: false,
         }
     }
 
@@ -400,6 +389,11 @@ impl RiftDevnetBuilder {
     /// - If false, does minimal ephemeral setup.
     #[must_use] pub fn interactive(mut self, value: bool) -> Self {
         self.interactive = value;
+        self
+    }
+
+    pub fn using_token_indexer(mut self, value: bool) -> Self {
+        self.using_token_indexer = value;
         self
     }
 
@@ -496,6 +490,7 @@ impl RiftDevnetBuilder {
         let ethereum_devnet = crate::evm_devnet::EthDevnet::setup(
             deploy_mode,
             devnet_cache.clone(),
+            self.using_token_indexer,
         )
         .await
         .map_err(|e| eyre::eyre!("[devnet builder] Failed to setup Ethereum devnet: {}", e))?;

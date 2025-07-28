@@ -192,11 +192,6 @@ impl BitcoinDevnet {
 
             info!("Mined 101 blocks in {:?}", mine_time.elapsed());
         }
-        let _bitcoin_data_engine_datadir = if let Some(devnet_cache) = &devnet_cache {
-            devnet_cache.create_bitcoin_data_engine_db().await.map_err(|e| eyre::eyre!("Failed to create bitcoin data engine db: {}", e))?
-        } else {
-            get_new_temp_dir()?
-        };
 
 
         let ( electrsd, esplora_client, esplora_url, electrsd_datadir) = 

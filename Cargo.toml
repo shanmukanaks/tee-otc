@@ -20,6 +20,7 @@ otc-chains = { path = "crates/otc-chains" }
 otc-mm-protocol = { path = "crates/otc-mm-protocol" }
 common = { path = "crates/common" }
 devnet = { path = "crates/devnet" }
+evm-token-indexer-client = { path = "crates/evm-token-indexer-client" }
 otc-server = {path = "bin/otc-server"}
 market-maker = {path = "bin/market-maker"}
 

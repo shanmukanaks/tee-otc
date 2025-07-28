@@ -38,6 +38,6 @@ test: build-test | ## Run all tests, assumes devnet has been cached and database
 build-test: ## Build the project for testing
 	@cargo build --tests
 
-cache-devnet: build-test
+cache-devnet: build-test ## Cache the devnet
 	cargo run --bin devnet -- cache
 	@echo "Devnet cached"
