@@ -1,9 +1,7 @@
 pub mod conversions;
-pub mod quote_repo;
 pub mod row_mappers;
 pub mod swap_repo;
 
-pub use quote_repo::QuoteRepository;
 pub use swap_repo::SwapRepository;
 
 use crate::error::OtcServerResult;
@@ -43,9 +41,6 @@ impl Database {
         Ok(Self { pool })
     }
     
-    #[must_use] pub fn quotes(&self) -> QuoteRepository {
-        QuoteRepository::new(self.pool.clone())
-    }
     
     #[must_use] pub fn swaps(&self) -> SwapRepository {
         SwapRepository::new(self.pool.clone())

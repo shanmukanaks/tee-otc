@@ -1,7 +1,6 @@
 use alloy::primitives::U256;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use otc_models::ChainType;
 use uuid::Uuid;
 
 /// Response from OTC server confirming connection
@@ -20,7 +19,8 @@ pub enum MMRequest {
     ValidateQuote {
         request_id: Uuid,
         quote_id: Uuid,
-        user_id: Uuid,
+        quote_hash: [u8; 32],
+        user_destination_address: String,
         timestamp: DateTime<Utc>,
     },
     
@@ -31,14 +31,24 @@ pub enum MMRequest {
         quote_id: Uuid,
         /// MM's deposit address
         deposit_address: String,
-        /// Chain for the deposit
-        deposit_chain: ChainType,
-        /// Expected amount to deposit
-        deposit_amount: U256,
         /// Proof that user is real - their deposit tx hash
         user_tx_hash: String,
-        /// Deadline for MM to deposit
-        deposit_deadline: DateTime<Utc>,
+        timestamp: DateTime<Utc>,
+    },
+    
+    /// Notify MM that user's deposit is confirmed and MM should send payment
+    UserDepositConfirmed {
+        request_id: Uuid,
+        swap_id: Uuid,
+        quote_id: Uuid,
+        /// User's destination address where MM should send funds
+        user_destination_address: String,
+        /// The nonce MM must embed in their transaction
+        mm_nonce: [u8; 16],
+        /// Expected payment details
+        expected_amount: U256,
+        expected_chain: String,
+        expected_token: String,
         timestamp: DateTime<Utc>,
     },
     
@@ -72,8 +82,6 @@ pub enum MMResponse {
         accepted: bool,
         /// Optional reason if rejected
         rejection_reason: Option<String>,
-        /// Optional updated destination address
-        mm_destination_address: Option<String>,
         timestamp: DateTime<Utc>,
     },
     

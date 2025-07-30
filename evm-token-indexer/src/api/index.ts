@@ -25,7 +25,7 @@ app.get("/balance/:address", async (c) => {
 app.get("/transfers/to/:address", async (c) => {
   const address = c.req.param("address") as `0x${string}`;
   const page = parseInt(c.req.query("page") || "1");
-  const limit = 20;
+  const limit = 50;
   const offset = (page - 1) * limit;
   const minAmount = c.req.query("amount");
 

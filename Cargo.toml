@@ -31,6 +31,7 @@ corepc-node = { version = "0.8.0", features = ["29_0", "download"] }
 electrsd = { git = "https://github.com/RCasatta/electrsd", rev = "bdc97e879bad82e13e69c74d898271db12224f44", features = ["corepc-node_29_0", "esplora_a33e97e1", "legacy"] }
 esplora-client = {git = "https://github.com/riftresearch/rust-esplora-client" , rev = "a571328ff799993f877d87db8dad6e4c6b313225", features = ["async", "tokio"]}
 
+
 alloy = { version = "1.0.23", features = ["full", "node-bindings"] }
 tokio = { version = "1.40", features = ["full"] }
 serde = { version = "1.0", features = ["derive"] }
@@ -64,6 +65,7 @@ backoff = { version = "0.4.0", features=["tokio"] }
 sha2 = "0.10"
 hkdf = "0.12"
 bip39 = "2.1.0"
+async-trait = "0.1"
 bitcoin-coin-selection =  { version = "0.7.0", features = ["rand"]}
 
 

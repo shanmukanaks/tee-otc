@@ -23,15 +23,16 @@ impl MessageHandler {
             MMRequest::ValidateQuote {
                 request_id,
                 quote_id,
-                user_id,
+                quote_hash,
+                user_destination_address,
                 timestamp,
             } => {
                 info!(
                     "Received quote validation request for quote {} from user {}",
-                    quote_id, user_id
+                    quote_id, user_destination_address
                 );
 
-                let (accepted, rejection_reason) = self.strategy.validate_quote(quote_id);
+                let (accepted, rejection_reason) = self.strategy.validate_quote(quote_id, quote_hash, user_destination_address);
 
                 info!(
                     "Quote {} validation result: accepted={}, reason={:?}",
@@ -43,7 +44,6 @@ impl MessageHandler {
                     quote_id: *quote_id,
                     accepted,
                     rejection_reason,
-                    mm_destination_address: None, // TODO: Implement address generation
                     timestamp: Utc::now(),
                 };
 
@@ -55,22 +55,19 @@ impl MessageHandler {
             }
 
             MMRequest::UserDeposited {
-                
+                request_id,
                 swap_id,
-                
+                quote_id,
                 deposit_address,
-                deposit_chain,
-                deposit_amount,
                 user_tx_hash,
-                deposit_deadline,
                 ..
             } => {
                 info!(
-                    "User deposited for swap {}: {} on {:?} chain to {}",
-                    swap_id, deposit_amount, deposit_chain, deposit_address
+                    "User deposited for swap {}: to address {}",
+                    swap_id, deposit_address
                 );
+                info!("Quote ID: {}", quote_id);
                 info!("User tx hash: {}", user_tx_hash);
-                info!("Deposit deadline: {}", deposit_deadline);
 
                 // TODO: Implement actual deposit logic
                 // For now, just acknowledge
@@ -82,6 +79,54 @@ impl MessageHandler {
                 // 3. Send DepositInitiated response with our tx hash
 
                 None // For now, we don't respond to this
+            }
+
+            MMRequest::UserDepositConfirmed {
+                request_id,
+                swap_id,
+                quote_id,
+                user_destination_address,
+                mm_nonce,
+                expected_amount,
+                expected_chain,
+                expected_token,
+                ..
+            } => {
+                info!(
+                    "User deposit confirmed for swap {}: MM should send {} {} on {} to {}",
+                    swap_id, expected_amount, expected_token, expected_chain, user_destination_address
+                );
+                info!("Quote ID: {}", quote_id);
+                info!("MM nonce to embed: {:?}", alloy::hex::encode(mm_nonce));
+
+                // TODO: Implement actual payment with embedded nonce
+                warn!("TODO: Send {} {} on {} to {} with embedded nonce", 
+                    expected_amount, expected_token, expected_chain, user_destination_address);
+
+                // In a real implementation, we would:
+                // 1. Prepare the transaction to user_destination_address
+                // 2. Embed the mm_nonce in the transaction (method depends on chain)
+                // 3. Send the transaction
+                // 4. Respond with DepositInitiated containing our tx hash
+
+                // For now, simulate sending after a short delay
+                if self.config.auto_accept {
+                    let response = MMResponse::DepositInitiated {
+                        request_id: *request_id,
+                        swap_id: *swap_id,
+                        tx_hash: format!("0xmm_tx_{}", alloy::hex::encode(&mm_nonce[..8])), // Simulated tx hash
+                        amount_sent: *expected_amount,
+                        timestamp: Utc::now(),
+                    };
+
+                    Some(ProtocolMessage {
+                        version: msg.version.clone(),
+                        sequence: msg.sequence + 1,
+                        payload: response,
+                    })
+                } else {
+                    None
+                }
             }
 
             MMRequest::SwapComplete {

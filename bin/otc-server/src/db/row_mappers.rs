@@ -43,30 +43,57 @@ impl<'r> FromRow<'r> for Quote {
 impl<'r> FromRow<'r> for Swap {
     fn from_row(row: &'r PgRow) -> OtcServerResult<Self> {
         let id: Uuid = row.try_get("id")?;
-        let quote_id: Uuid = row.try_get("quote_id")?;
         let market_maker_id: Uuid = row.try_get("market_maker_id")?;
         
-        // Get salts as Vec<u8> from database and convert to [u8; 32]
+        // Get salt as Vec<u8> from database and convert to [u8; 32]
         let user_deposit_salt_vec: Vec<u8> = row.try_get("user_deposit_salt")?;
-        let mm_deposit_salt_vec: Vec<u8> = row.try_get("mm_deposit_salt")?;
-        
         let mut user_deposit_salt = [0u8; 32];
-        let mut mm_deposit_salt = [0u8; 32];
         
         if user_deposit_salt_vec.len() != 32 {
             return Err(OtcServerError::InvalidData {
                 message: "user_deposit_salt must be exactly 32 bytes".to_string(),
             });
         }
-        if mm_deposit_salt_vec.len() != 32 {
+        user_deposit_salt.copy_from_slice(&user_deposit_salt_vec);
+        
+        // Get mm_nonce as Vec<u8> from database and convert to [u8; 16]
+        let mm_nonce_vec: Vec<u8> = row.try_get("mm_nonce")?;
+        let mut mm_nonce = [0u8; 16];
+        
+        if mm_nonce_vec.len() != 16 {
             return Err(OtcServerError::InvalidData {
-                message: "mm_deposit_salt must be exactly 32 bytes".to_string(),
+                message: "mm_nonce must be exactly 16 bytes".to_string(),
             });
         }
+        mm_nonce.copy_from_slice(&mm_nonce_vec);
         
-        user_deposit_salt.copy_from_slice(&user_deposit_salt_vec);
-        mm_deposit_salt.copy_from_slice(&mm_deposit_salt_vec);
+        // Get the embedded quote fields
+        let quote_id: Uuid = row.try_get("quote_id")?;
+        let from_chain: String = row.try_get("from_chain")?;
+        let from_token: serde_json::Value = row.try_get("from_token")?;
+        let from_amount: String = row.try_get("from_amount")?;
+        let from_decimals: i16 = row.try_get("from_decimals")?;
+        let to_chain: String = row.try_get("to_chain")?;
+        let to_token: serde_json::Value = row.try_get("to_token")?;
+        let to_amount: String = row.try_get("to_amount")?;
+        let to_decimals: i16 = row.try_get("to_decimals")?;
+        let quote_market_maker_id: Uuid = row.try_get("quote_market_maker_id")?;
+        let expires_at: DateTime<Utc> = row.try_get("expires_at")?;
+        let quote_created_at: DateTime<Utc> = row.try_get("quote_created_at")?;
         
+        let from = currency_from_db(from_chain, from_token, from_amount, from_decimals as u8)?;
+        let to = currency_from_db(to_chain, to_token, to_amount, to_decimals as u8)?;
+        
+        let quote = Quote {
+            id: quote_id,
+            from,
+            to,
+            market_maker_id: quote_market_maker_id,
+            expires_at,
+            created_at: quote_created_at,
+        };
+        
+        let user_deposit_address: String = row.try_get("user_deposit_address")?;
         let user_destination_address: String = row.try_get("user_destination_address")?;
         let user_refund_address: String = row.try_get("user_refund_address")?;
         let status: SwapStatus = row.try_get("status")?;
@@ -91,7 +118,7 @@ impl<'r> FromRow<'r> for Swap {
         };
         
         let failure_reason: Option<String> = row.try_get("failure_reason")?;
-        let timeout_at: DateTime<Utc> = row.try_get("timeout_at")?;
+        let failure_at: Option<DateTime<Utc>> = row.try_get("failure_at")?;
         let mm_notified_at: Option<DateTime<Utc>> = row.try_get("mm_notified_at")?;
         let mm_private_key_sent_at: Option<DateTime<Utc>> = row.try_get("mm_private_key_sent_at")?;
         let created_at: DateTime<Utc> = row.try_get("created_at")?;
@@ -99,10 +126,11 @@ impl<'r> FromRow<'r> for Swap {
         
         Ok(Swap {
             id,
-            quote_id,
             market_maker_id,
+            quote,
             user_deposit_salt,
-            mm_deposit_salt,
+            user_deposit_address,
+            mm_nonce,
             user_destination_address,
             user_refund_address,
             status,
@@ -110,7 +138,7 @@ impl<'r> FromRow<'r> for Swap {
             mm_deposit_status,
             settlement_status,
             failure_reason,
-            timeout_at,
+            failure_at,
             mm_notified_at,
             mm_private_key_sent_at,
             created_at,

@@ -18,18 +18,18 @@ pub enum TransitionError {
 pub type TransitionResult = Result<(), TransitionError>;
 
 impl Swap {
-    /// Transition to `WaitingMMDeposit` when user deposit is detected
+    /// Transition when user deposit is detected
     pub fn user_deposit_detected(
         &mut self,
         tx_hash: String,
         amount: U256,
-        confirmations: u32,
+        confirmations: u64,
     ) -> TransitionResult {
         ensure!(
-            self.status == SwapStatus::WaitingUserDeposit,
+            self.status == SwapStatus::WaitingUserDepositInitiated,
             InvalidTransitionSnafu {
                 from: self.status,
-                to: SwapStatus::WaitingMMDeposit,
+                to: SwapStatus::WaitingUserDepositConfirmed,
             }
         );
         
@@ -42,24 +42,47 @@ impl Swap {
             last_checked: now,
         });
         
-        self.status = SwapStatus::WaitingMMDeposit;
+        self.status = SwapStatus::WaitingUserDepositConfirmed;
         self.updated_at = now;
         
         Ok(())
     }
     
-    /// Transition to `WaitingConfirmations` when MM deposit is detected
+    /// Transition when user deposit is confirmed
+    pub fn user_deposit_confirmed(&mut self) -> TransitionResult {
+        ensure!(
+            self.status == SwapStatus::WaitingUserDepositConfirmed,
+            InvalidTransitionSnafu {
+                from: self.status,
+                to: SwapStatus::WaitingMMDepositInitiated,
+            }
+        );
+        
+        ensure!(
+            self.user_deposit_status.is_some(),
+            MissingDataSnafu {
+                reason: "User deposit status not found",
+            }
+        );
+        
+        self.status = SwapStatus::WaitingMMDepositInitiated;
+        self.updated_at = Utc::now();
+        
+        Ok(())
+    }
+
+    /// Transition when MM deposit is detected
     pub fn mm_deposit_detected(
         &mut self,
         tx_hash: String,
         amount: U256,
-        confirmations: u32,
+        confirmations: u64,
     ) -> TransitionResult {
         ensure!(
-            self.status == SwapStatus::WaitingMMDeposit,
+            self.status == SwapStatus::WaitingMMDepositInitiated,
             InvalidTransitionSnafu {
                 from: self.status,
-                to: SwapStatus::WaitingConfirmations,
+                to: SwapStatus::WaitingMMDepositConfirmed,
             }
         );
         
@@ -72,17 +95,17 @@ impl Swap {
             last_checked: now,
         });
         
-        self.status = SwapStatus::WaitingConfirmations;
+        self.status = SwapStatus::WaitingMMDepositConfirmed;
         self.updated_at = now;
         
         Ok(())
     }
-    
+
     /// Update confirmation count for deposits
     pub fn update_confirmations(
         &mut self,
-        user_confirmations: Option<u32>,
-        mm_confirmations: Option<u32>,
+        user_confirmations: Option<u64>,
+        mm_confirmations: Option<u64>,
     ) -> TransitionResult {
         let now = Utc::now();
         
@@ -100,17 +123,24 @@ impl Swap {
         Ok(())
     }
     
-    /// Transition to Settling when confirmations are reached
-    pub fn confirmations_reached(&mut self) -> TransitionResult {
+    /// Transition when MM deposit is confirmed
+    pub fn mm_deposit_confirmed(&mut self) -> TransitionResult {
         ensure!(
-            self.status == SwapStatus::WaitingConfirmations,
+            self.status == SwapStatus::WaitingMMDepositConfirmed,
             InvalidTransitionSnafu {
                 from: self.status,
-                to: SwapStatus::Settling,
+                to: SwapStatus::Settled,
             }
         );
         
-        self.status = SwapStatus::Settling;
+        ensure!(
+            self.mm_deposit_status.is_some(),
+            MissingDataSnafu {
+                reason: "MM deposit status not found",
+            }
+        );
+        
+        self.status = SwapStatus::Settled;
         self.updated_at = Utc::now();
         
         Ok(())
@@ -126,9 +156,9 @@ impl Swap {
     /// Record that private key was sent to MM
     pub fn mark_private_key_sent(&mut self) -> TransitionResult {
         ensure!(
-            self.status == SwapStatus::Settling,
+            self.status == SwapStatus::Settled,
             MissingDataSnafu {
-                reason: "Can only send private key during settling phase",
+                reason: "Can only send private key after settlement",
             }
         );
         
@@ -137,13 +167,13 @@ impl Swap {
         Ok(())
     }
     
-    /// Start settlement process
-    pub fn settlement_initiated(&mut self, tx_hash: String) -> TransitionResult {
+    /// Record settlement transaction details
+    pub fn record_settlement(&mut self, tx_hash: String, confirmations: u64, fee: Option<U256>) -> TransitionResult {
         ensure!(
-            self.status == SwapStatus::Settling,
+            self.status == SwapStatus::Settled,
             InvalidTransitionSnafu {
                 from: self.status,
-                to: SwapStatus::Settling,
+                to: SwapStatus::Settled,
             }
         );
         
@@ -151,40 +181,26 @@ impl Swap {
         self.settlement_status = Some(SettlementStatus {
             tx_hash,
             broadcast_at: now,
-            confirmations: 0,
-            completed_at: None,
-            fee: None,
+            confirmations,
+            completed_at: Some(now),
+            fee,
         });
         
         self.updated_at = now;
         Ok(())
     }
     
-    /// Complete the settlement
-    pub fn settlement_completed(&mut self, confirmations: u32, fee: Option<U256>) -> TransitionResult {
-        ensure!(
-            self.status == SwapStatus::Settling,
-            InvalidTransitionSnafu {
-                from: self.status,
-                to: SwapStatus::Completed,
-            }
-        );
-        
-        let now = Utc::now();
-        
+    /// Update settlement confirmations
+    pub fn update_settlement_confirmations(&mut self, confirmations: u64) -> TransitionResult {
         if let Some(settlement) = &mut self.settlement_status {
             settlement.confirmations = confirmations;
-            settlement.completed_at = Some(now);
-            settlement.fee = fee;
+            self.updated_at = Utc::now();
+            Ok(())
         } else {
-            return Err(TransitionError::MissingData {
+            Err(TransitionError::MissingData {
                 reason: "Settlement status not found".to_string(),
-            });
+            })
         }
-        
-        self.status = SwapStatus::Completed;
-        self.updated_at = now;
-        Ok(())
     }
     
     /// Initiate refund to user
@@ -192,9 +208,9 @@ impl Swap {
         ensure!(
             matches!(
                 self.status,
-                SwapStatus::WaitingUserDeposit |
-                SwapStatus::WaitingMMDeposit |
-                SwapStatus::WaitingConfirmations
+                SwapStatus::WaitingUserDepositInitiated |
+                SwapStatus::WaitingUserDepositConfirmed |
+                SwapStatus::WaitingMMDepositInitiated
             ),
             InvalidTransitionSnafu {
                 from: self.status,
@@ -208,20 +224,20 @@ impl Swap {
         Ok(())
     }
     
-    /// Initiate refund to both parties
-    pub fn initiate_both_refunds(&mut self, reason: String) -> TransitionResult {
+    /// Initiate refund to MM
+    pub fn initiate_mm_refund(&mut self, reason: String) -> TransitionResult {
         ensure!(
             matches!(
                 self.status,
-                SwapStatus::WaitingConfirmations | SwapStatus::Settling
+                SwapStatus::WaitingMMDepositConfirmed | SwapStatus::Settled
             ),
             InvalidTransitionSnafu {
                 from: self.status,
-                to: SwapStatus::RefundingBoth,
+                to: SwapStatus::RefundingMM,
             }
         );
         
-        self.status = SwapStatus::RefundingBoth;
+        self.status = SwapStatus::RefundingMM;
         self.failure_reason = Some(reason);
         self.updated_at = Utc::now();
         Ok(())
@@ -236,17 +252,17 @@ impl Swap {
     }
     
     /// Check if swap has timed out
-    #[must_use] pub fn is_timed_out(&self) -> bool {
-        Utc::now() > self.timeout_at
+    #[must_use] pub fn has_failed(&self) -> bool {
+        self.failure_at.is_some()
     }
     
-    /// Check if swap is in an active state (not completed or failed)
+    /// Check if swap is in an active state (not settled or failed)
     #[must_use] pub fn is_active(&self) -> bool {
-        !matches!(self.status, SwapStatus::Completed | SwapStatus::Failed)
+        !matches!(self.status, SwapStatus::Settled | SwapStatus::Failed)
     }
     
     /// Get required confirmations based on chain and amount
-    #[must_use] pub fn get_required_confirmations(&self) -> (u32, u32) {
+    #[must_use] pub fn get_required_confirmations(&self) -> (u64, u64) {
         // TODO: Implement logic based on chain type and amount
         // For now, return default values
         (3, 3) // (user_confirmations, mm_confirmations)
@@ -255,6 +271,8 @@ impl Swap {
 
 #[cfg(test)]
 mod tests {
+    use crate::{ChainType, Currency, Quote, TokenIdentifier};
+
     use super::*;
     use chrono::Duration;
     use uuid::Uuid;
@@ -262,18 +280,36 @@ mod tests {
     fn create_test_swap() -> Swap {
         Swap {
             id: Uuid::new_v4(),
-            quote_id: Uuid::new_v4(),
+            quote: Quote {
+                id: Uuid::new_v4(),
+                market_maker_id: Uuid::new_v4(),
+                from: Currency {
+                    chain: ChainType::Ethereum,
+                    token: TokenIdentifier::Native,
+                    amount: U256::from(1000000u64),
+                    decimals: 18,
+                },
+                to: Currency {
+                    chain: ChainType::Bitcoin,
+                    token: TokenIdentifier::Native,
+                    amount: U256::from(1000000u64),
+                    decimals: 8,
+                },
+                expires_at: Utc::now() + Duration::hours(1),
+                created_at: Utc::now(),
+            },
             market_maker_id: Uuid::new_v4(),
             user_deposit_salt: [0u8; 32],
-            mm_deposit_salt: [0u8; 32],
+            user_deposit_address: "0x123".to_string(),
+            mm_nonce: [0u8; 16],
             user_destination_address: "0x123".to_string(),
             user_refund_address: "bc1q123".to_string(),
-            status: SwapStatus::WaitingUserDeposit,
+            status: SwapStatus::WaitingUserDepositInitiated,
             user_deposit_status: None,
             mm_deposit_status: None,
             settlement_status: None,
             failure_reason: None,
-            timeout_at: Utc::now() + Duration::hours(1),
+            failure_at: None,
             mm_notified_at: None,
             mm_private_key_sent_at: None,
             created_at: Utc::now(),
@@ -292,7 +328,7 @@ mod tests {
             1,
         ).unwrap();
         
-        assert_eq!(swap.status, SwapStatus::WaitingMMDeposit);
+        assert_eq!(swap.status, SwapStatus::WaitingUserDepositConfirmed);
         assert!(swap.user_deposit_status.is_some());
         assert_eq!(swap.user_deposit_status.as_ref().unwrap().tx_hash, "0xabc123");
         
@@ -315,6 +351,11 @@ mod tests {
             U256::from(1000000u64),
             1,
         ).unwrap();
+        assert_eq!(swap.status, SwapStatus::WaitingUserDepositConfirmed);
+        
+        // User deposit confirmed
+        swap.user_deposit_confirmed().unwrap();
+        assert_eq!(swap.status, SwapStatus::WaitingMMDepositInitiated);
         
         // MM deposits
         swap.mm_deposit_detected(
@@ -322,25 +363,23 @@ mod tests {
             U256::from(500000u64),
             1,
         ).unwrap();
+        assert_eq!(swap.status, SwapStatus::WaitingMMDepositConfirmed);
         
-        // Confirmations reached
-        swap.confirmations_reached().unwrap();
-        assert_eq!(swap.status, SwapStatus::Settling);
+        // MM deposit confirmed
+        swap.mm_deposit_confirmed().unwrap();
+        assert_eq!(swap.status, SwapStatus::Settled);
         
-        // Settlement initiated
-        swap.settlement_initiated("0xsettle789".to_string()).unwrap();
-        
-        // Settlement completed
-        swap.settlement_completed(6, Some(U256::from(1000u64))).unwrap();
-        assert_eq!(swap.status, SwapStatus::Completed);
+        // Record settlement
+        swap.record_settlement("0xsettle789".to_string(), 6, Some(U256::from(1000u64))).unwrap();
+        assert!(swap.settlement_status.is_some());
     }
     
     #[test]
     fn test_timeout_refund() {
         let mut swap = create_test_swap();
-        swap.timeout_at = Utc::now() - Duration::hours(1); // Already timed out
+        swap.failure_at = Some(Utc::now() - Duration::hours(1)); // Already timed out
         
-        assert!(swap.is_timed_out());
+        assert!(swap.has_failed());
         
         // Can refund user from waiting state
         swap.initiate_user_refund("Timeout waiting for user deposit".to_string()).unwrap();

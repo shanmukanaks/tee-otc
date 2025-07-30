@@ -1,4 +1,4 @@
-use crate::SwapStatus;
+use crate::{Quote, SwapStatus};
 use alloy::primitives::U256;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -7,12 +7,16 @@ use uuid::Uuid;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Swap {
     pub id: Uuid,
-    pub quote_id: Uuid,
     pub market_maker_id: Uuid,
+
+    pub quote: Quote,
     
-    // Salts for deterministic wallet generation
+    // Salt for deterministic wallet generation when combined with the TEE master key
     pub user_deposit_salt: [u8; 32],
-    pub mm_deposit_salt: [u8; 32],
+    pub user_deposit_address: String, // cached for convenience, can be derived from the salt and master key
+
+    // Nonce for the market maker to embed in their payment address
+    pub mm_nonce: [u8; 16],
     
     // User's addresses
     pub user_destination_address: String,
@@ -30,7 +34,7 @@ pub struct Swap {
     
     // Failure/timeout tracking
     pub failure_reason: Option<String>,
-    pub timeout_at: DateTime<Utc>,
+    pub failure_at: Option<DateTime<Utc>>,
     
     // MM coordination
     pub mm_notified_at: Option<DateTime<Utc>>,
@@ -46,7 +50,7 @@ pub struct UserDepositStatus {
     pub tx_hash: String,
     pub amount: U256,
     pub detected_at: DateTime<Utc>,
-    pub confirmations: u32,
+    pub confirmations: u64,
     pub last_checked: DateTime<Utc>,
 }
 
@@ -55,7 +59,7 @@ pub struct MMDepositStatus {
     pub tx_hash: String,
     pub amount: U256,
     pub detected_at: DateTime<Utc>,
-    pub confirmations: u32,
+    pub confirmations: u64,
     pub last_checked: DateTime<Utc>,
 }
 
@@ -63,14 +67,15 @@ pub struct MMDepositStatus {
 pub struct SettlementStatus {
     pub tx_hash: String,
     pub broadcast_at: DateTime<Utc>,
-    pub confirmations: u32,
+    pub confirmations: u64,
     pub completed_at: Option<DateTime<Utc>>,
     pub fee: Option<U256>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct DepositInfo {
+pub struct TransferInfo {
     pub tx_hash: String,
     pub amount: U256,
     pub detected_at: DateTime<Utc>,
+    pub confirmations: u64,
 }

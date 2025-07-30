@@ -63,20 +63,37 @@ pub struct OtcServerArgs {
     #[arg(long, env = "RUST_LOG", default_value = "info")]
     pub log_level: String,
 
+    /// Ethereum Mainnet RPC URL
+    #[arg(long, env = "EVM_RPC_URL")]
+    pub ethereum_mainnet_rpc_url: String,
+
+    /// Ethereum Mainnet Token Indexer URL
+    #[arg(long, env = "EVM_TOKEN_INDEXER_URL")]
+    pub ethereum_mainnet_token_indexer_url: String,
+
+    /// Ethereum Mainnet Chain ID
+    #[arg(long, env = "EVM_CHAIN_ID", default_value = "1")]
+    pub ethereum_mainnet_chain_id: u64,
+
+    /// Bitcoin RPC URL
+    #[arg(long, env = "BITCOIN_RPC_URL")]
+    pub bitcoin_rpc_url: String,
+
+    /// Electrum HTTP Server URL
+    #[arg(long, env = "ELECTRUM_HTTP_SERVER_URL")]
+    pub esplora_http_server_url: String,
+
+    /// Bitcoin Network
+    #[arg(long, env = "BITCOIN_NETWORK", default_value = "bitcoin")]
+    pub bitcoin_network: bitcoin::Network,
+
     /// API keys file
     #[arg(long, env = "WHITELISTED_MM_FILE", default_value = "prod_whitelisted_market_makers.json")]
     pub whitelist_file: String,
 }
 
-impl Default for OtcServerArgs {
-    fn default() -> Self {
-        Self {
-            host: "127.0.0.1".parse().unwrap(),
-            port: 3000,
-            database_url: "postgres://otc_user:otc_password@localhost:5432/otc_db".to_string(),
-            log_level: "info".to_string(),
-            whitelist_file: "prod_whitelisted_market_makers.json".to_string(),
-        }
-    }
-}
-
+const DEFAULT_HOST: &str = "127.0.0.1";
+const DEFAULT_PORT: u16 = 3000;
+const DEFAULT_DATABASE_URL: &str = "postgres://otc_user:otc_password@localhost:5432/otc_db";
+const DEFAULT_LOG_LEVEL: &str = "info";
+const DEFAULT_WHITELISTED_MM_FILE: &str = "prod_whitelisted_market_makers.json";

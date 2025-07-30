@@ -1,5 +1,5 @@
 use crate::ChainType;
-use alloy::primitives::U256;
+use alloy::primitives::{keccak256, U256};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
@@ -36,3 +36,10 @@ pub struct Quote {
     pub expires_at: DateTime<Utc>,
     pub created_at: DateTime<Utc>,
 }
+
+impl Quote {
+    pub fn hash(&self) -> [u8; 32] {
+        keccak256(serde_json::to_string(self).unwrap().as_bytes()).into()
+    }
+}
+

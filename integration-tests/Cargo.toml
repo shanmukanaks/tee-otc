@@ -21,3 +21,4 @@ devnet = {workspace = true}
 alloy = {workspace =true}
 tracing = {workspace =true}
 evm-token-indexer-client = {workspace = true}
+bitcoin = {workspace = true}

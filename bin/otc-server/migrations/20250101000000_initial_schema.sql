@@ -6,13 +6,13 @@ CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
 -- Create swap status enum with all states
 CREATE TYPE swap_status AS ENUM (
-    'waiting_user_deposit',
-    'waiting_mm_deposit',
-    'waiting_confirmations',
-    'settling',
-    'completed',
+    'waiting_user_deposit_initiated',
+    'waiting_user_deposit_confirmed',
+    'waiting_mm_deposit_initiated',
+    'waiting_mm_deposit_confirmed',
+    'settled',
     'refunding_user',
-    'refunding_both',
+    'refunding_mm',
     'failed'
 );
 
@@ -43,16 +43,17 @@ CREATE TABLE swaps (
     quote_id UUID NOT NULL REFERENCES quotes(id),
     market_maker_id UUID NOT NULL,
     
-    -- Salt columns for deterministic wallet generation
+    -- Salt and nonce columns for deterministic wallet generation
     user_deposit_salt BYTEA NOT NULL,
-    mm_deposit_salt BYTEA NOT NULL,
+    user_deposit_address VARCHAR(255) NOT NULL,
+    mm_nonce BYTEA NOT NULL,
     
     -- User addresses
     user_destination_address VARCHAR(255) NOT NULL,
     user_refund_address VARCHAR(255) NOT NULL,
     
     -- Core status using enum
-    status swap_status NOT NULL DEFAULT 'waiting_user_deposit',
+    status swap_status NOT NULL DEFAULT 'waiting_user_deposit_initiated',
     
     -- Deposit tracking (JSONB for rich data)
     user_deposit_status JSONB,
@@ -61,9 +62,9 @@ CREATE TABLE swaps (
     -- Settlement tracking
     settlement_status JSONB,
     
-    -- Failure/timeout tracking
+    -- Failure tracking
     failure_reason TEXT,
-    timeout_at TIMESTAMPTZ NOT NULL,
+    failure_at TIMESTAMPTZ,
     
     -- MM coordination
     mm_notified_at TIMESTAMPTZ,
@@ -83,14 +84,14 @@ CREATE INDEX idx_swaps_status ON swaps(status);
 
 -- Indexes for monitoring active swaps
 CREATE INDEX idx_swaps_active ON swaps(status) 
-WHERE status NOT IN ('completed', 'failed');
+WHERE status NOT IN ('settled', 'failed');
 
-CREATE INDEX idx_swaps_timeout ON swaps(timeout_at)
-WHERE status NOT IN ('completed', 'failed');
+CREATE INDEX idx_swaps_failure ON swaps(failure_at)
+WHERE failure_at IS NOT NULL;
 
 -- Combined index for market maker queries
 CREATE INDEX idx_swaps_market_maker_active ON swaps(market_maker_id, status)
-WHERE status NOT IN ('completed', 'failed');
+WHERE status NOT IN ('settled', 'failed');
 
 -- Create update trigger for updated_at
 CREATE OR REPLACE FUNCTION update_updated_at_column()

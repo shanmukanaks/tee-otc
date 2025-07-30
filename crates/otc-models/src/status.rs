@@ -5,12 +5,12 @@ use serde::{Deserialize, Serialize};
 #[cfg_attr(feature = "sqlx", derive(sqlx::Type))]
 #[cfg_attr(feature = "sqlx", sqlx(type_name = "swap_status", rename_all = "snake_case"))]
 pub enum SwapStatus {
-    WaitingUserDeposit,
-    WaitingMMDeposit,
-    WaitingConfirmations,
-    Settling,
-    Completed,
+    WaitingUserDepositInitiated,
+    WaitingUserDepositConfirmed,
+    WaitingMMDepositInitiated,
+    WaitingMMDepositConfirmed,
+    Settled,
     RefundingUser,
-    RefundingBoth,
+    RefundingMM,
     Failed,
 }

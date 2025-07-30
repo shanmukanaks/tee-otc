@@ -18,8 +18,12 @@ use tokio::time::Instant;
 
 use bitcoincore_rpc_async::RpcApi;
 
-use alloy::{network::EthereumWallet, primitives::{keccak256, Address}, providers::Provider, signers::local::LocalSigner};
-
+use alloy::{
+    network::EthereumWallet,
+    primitives::{keccak256, Address},
+    providers::Provider,
+    signers::local::LocalSigner,
+};
 
 // ================== Deploy Function ================== //
 
@@ -67,7 +71,8 @@ impl Default for RiftDevnetCache {
 }
 
 impl RiftDevnetCache {
-    #[must_use] pub fn new() -> Self {
+    #[must_use]
+    pub fn new() -> Self {
         let cache_dir = dirs::cache_dir().unwrap().join(CACHE_DIR_NAME);
         let populated = cache_dir.exists();
         Self {
@@ -93,14 +98,11 @@ impl RiftDevnetCache {
             .arg(&cache_file)
             .arg(&temp_file_path)
             .output()
-            .await.map_err(|e| eyre::eyre!("Failed to copy {}: {}", operation_name, e))?;
+            .await
+            .map_err(|e| eyre::eyre!("Failed to copy {}: {}", operation_name, e))?;
 
         if !output.status.success() {
-            return Err(eyre::eyre!(
-                "Failed to copy {}: {}",
-                operation_name,
-                output.status
-            ).into());
+            return Err(eyre::eyre!("Failed to copy {}: {}", operation_name, output.status).into());
         }
 
         Ok(temp_file)
@@ -125,14 +127,16 @@ impl RiftDevnetCache {
             .arg(format!("{}/.", cache_dir.to_string_lossy()))
             .arg(temp_dir.path())
             .output()
-            .await.map_err(|e| eyre::eyre!("Failed to copy {}: {}", operation_name, e))?;
+            .await
+            .map_err(|e| eyre::eyre!("Failed to copy {}: {}", operation_name, e))?;
 
         if !output.status.success() {
             return Err(eyre::eyre!(
                 "Failed to copy {}: {}",
                 operation_name,
                 String::from_utf8_lossy(&output.stderr)
-            ).into());
+            )
+            .into());
         }
 
         Ok(temp_dir)
@@ -146,21 +150,19 @@ impl RiftDevnetCache {
         // Remove the cached .cookie file as bitcoind will generate a new one
         let cookie_path = temp_dir.path().join("regtest").join(".cookie");
         if cookie_path.exists() {
-            tokio::fs::remove_file(&cookie_path).await.map_err(|e| eyre::eyre!("Failed to remove cookie file: {}", e))?;
+            tokio::fs::remove_file(&cookie_path)
+                .await
+                .map_err(|e| eyre::eyre!("Failed to remove cookie file: {}", e))?;
             tracing::info!("Removed cached .cookie file to allow bitcoind to generate a new one");
         }
 
         Ok(temp_dir)
     }
 
-
-
-
     pub async fn create_electrsd_datadir(&self) -> Result<tempfile::TempDir> {
         self.copy_cached_dir(ESPLORA_DATADIR_NAME, "electrsd datadir")
             .await
     }
-
 
     pub async fn create_anvil_datadir(&self) -> Result<tempfile::TempDir> {
         self.copy_cached_dir(ANVIL_DATADIR_NAME, "anvil datadir")
@@ -173,7 +175,8 @@ impl RiftDevnetCache {
         let save_start = Instant::now();
 
         // Create cache directory if it doesn't exist
-        fs::create_dir_all(&self.cache_dir).map_err(|e| eyre::eyre!("Failed to create cache directory: {}", e))?;
+        fs::create_dir_all(&self.cache_dir)
+            .map_err(|e| eyre::eyre!("Failed to create cache directory: {}", e))?;
 
         // Get a file lock to prevent concurrent saves
         let lock_file_path = self.cache_dir.join(".lock");
@@ -181,7 +184,8 @@ impl RiftDevnetCache {
             .create(true)
             .write(true)
             .truncate(true)
-            .open(&lock_file_path).map_err(|e| eyre::eyre!("Failed to open lock file: {}", e))?;
+            .open(&lock_file_path)
+            .map_err(|e| eyre::eyre!("Failed to open lock file: {}", e))?;
 
         // Try to get exclusive lock
         lock_file
@@ -229,7 +233,8 @@ impl RiftDevnetCache {
             .arg("-SIGTERM")
             .arg(anvil_pid.to_string())
             .output()
-            .await.map_err(|e| eyre::eyre!("Failed to shutdown Anvil: {}", e))?;
+            .await
+            .map_err(|e| eyre::eyre!("Failed to shutdown Anvil: {}", e))?;
         info!(
             "[Cache] Anvil shutdown took {:?}",
             anvil_shutdown_start.elapsed()
@@ -241,7 +246,9 @@ impl RiftDevnetCache {
         let bitcoin_datadir_src = devnet.bitcoin.bitcoin_datadir.path();
         let bitcoin_datadir_dst = self.cache_dir.join(BITCOIN_DATADIR_NAME);
         let bitcoin_copy_start = Instant::now();
-        Self::copy_dir_recursive(bitcoin_datadir_src, &bitcoin_datadir_dst).await.map_err(|e| eyre::eyre!("Failed to copy Bitcoin datadir: {}", e))?;
+        Self::copy_dir_recursive(bitcoin_datadir_src, &bitcoin_datadir_dst)
+            .await
+            .map_err(|e| eyre::eyre!("Failed to copy Bitcoin datadir: {}", e))?;
         info!(
             "[Cache] Bitcoin datadir copied in {:?}",
             bitcoin_copy_start.elapsed()
@@ -250,10 +257,11 @@ impl RiftDevnetCache {
         // Remove the .cookie file from cache as it will be regenerated on startup
         let cached_cookie = bitcoin_datadir_dst.join("regtest").join(".cookie");
         if cached_cookie.exists() {
-            tokio::fs::remove_file(&cached_cookie).await.map_err(|e| eyre::eyre!("Failed to remove .cookie file: {}", e))?;
+            tokio::fs::remove_file(&cached_cookie)
+                .await
+                .map_err(|e| eyre::eyre!("Failed to remove .cookie file: {}", e))?;
             info!("[Cache] Removed .cookie file from cache");
         }
-
 
         // 4. Save Electrsd datadir
         let electrsd_datadir_src = devnet.bitcoin.electrsd_datadir.path();
@@ -264,7 +272,6 @@ impl RiftDevnetCache {
             "[Cache] Electrsd datadir copied in {:?}",
             electrsd_copy_start.elapsed()
         );
-
 
         // 7. Save Anvil state file
         // Anvil automatically dumps state on exit to the anvil_datafile when --dump-state is used
@@ -283,8 +290,6 @@ impl RiftDevnetCache {
             anvil_copy_start.elapsed()
         );
 
-
-
         // Release lock by dropping it
         drop(lock_file);
 
@@ -296,7 +301,9 @@ impl RiftDevnetCache {
     }
 
     async fn copy_dir_recursive(src: &std::path::Path, dst: &std::path::Path) -> Result<()> {
-        tokio::fs::create_dir_all(dst).await.map_err(|e| eyre::eyre!("Failed to create directory: {}", e))?;
+        tokio::fs::create_dir_all(dst)
+            .await
+            .map_err(|e| eyre::eyre!("Failed to create directory: {}", e))?;
 
         // Copy contents of src to dst
         let output = tokio::process::Command::new("cp")
@@ -304,19 +311,20 @@ impl RiftDevnetCache {
             .arg(format!("{}/.", src.to_string_lossy()))
             .arg(dst)
             .output()
-            .await.map_err(|e| eyre::eyre!("Failed to copy directory: {}", e))?;
+            .await
+            .map_err(|e| eyre::eyre!("Failed to copy directory: {}", e))?;
 
         if !output.status.success() {
             return Err(eyre::eyre!(
                 "Failed to copy directory: {}",
                 String::from_utf8_lossy(&output.stderr)
-            ).into());
+            )
+            .into());
         }
 
         Ok(())
     }
 }
-
 
 #[derive(Debug, snafu::Snafu)]
 pub enum DevnetError {
@@ -332,7 +340,6 @@ impl From<eyre::Report> for DevnetError {
 
 pub type Result<T, E = DevnetError> = std::result::Result<T, E>;
 
-
 // ================== RiftDevnet ================== //
 
 /// The "combined" Devnet which holds:
@@ -346,11 +353,13 @@ pub struct RiftDevnet {
 }
 
 impl RiftDevnet {
-    #[must_use] pub fn builder() -> RiftDevnetBuilder {
+    #[must_use]
+    pub fn builder() -> RiftDevnetBuilder {
         RiftDevnetBuilder::new()
     }
 
-    #[must_use] pub fn builder_for_cached() -> RiftDevnetBuilder {
+    #[must_use]
+    pub fn builder_for_cached() -> RiftDevnetBuilder {
         RiftDevnetBuilder::for_cached()
     }
 }
@@ -363,37 +372,40 @@ pub struct RiftDevnetBuilder {
     funded_bitcoin_addreses: Vec<String>,
     fork_config: Option<ForkConfig>,
     using_esplora: bool,
-    using_token_indexer: bool,
+    token_indexer_database_url: Option<String>,
 }
 
 impl RiftDevnetBuilder {
     /// Create a new builder with all default values.
-    #[must_use] pub fn new() -> Self {
+    #[must_use]
+    pub fn new() -> Self {
         Default::default()
     }
 
     /// Create a builder with settings for a cached devnet.
-    #[must_use] pub fn for_cached() -> Self {
+    #[must_use]
+    pub fn for_cached() -> Self {
         RiftDevnetBuilder {
             interactive: false,
             funded_evm_addresses: vec![],
             funded_bitcoin_addreses: vec![],
             fork_config: None,
             using_esplora: true,
-            using_token_indexer: false,
+            token_indexer_database_url: None,
         }
     }
 
     /// Toggle whether the devnet runs in "interactive" mode:
     /// - If true, binds Anvil on a stable port and starts a local `RiftIndexerServer`.
     /// - If false, does minimal ephemeral setup.
-    #[must_use] pub fn interactive(mut self, value: bool) -> Self {
+    #[must_use]
+    pub fn interactive(mut self, value: bool) -> Self {
         self.interactive = value;
         self
     }
 
-    pub fn using_token_indexer(mut self, value: bool) -> Self {
-        self.using_token_indexer = value;
+    pub fn using_token_indexer(mut self, database_url: String) -> Self {
+        self.token_indexer_database_url = Some(database_url);
         self
     }
 
@@ -410,13 +422,15 @@ impl RiftDevnetBuilder {
     }
 
     /// Provide a fork configuration (RPC URL/block) if you want to fork a public chain.
-    #[must_use] pub fn fork_config(mut self, config: ForkConfig) -> Self {
+    #[must_use]
+    pub fn fork_config(mut self, config: ForkConfig) -> Self {
         self.fork_config = Some(config);
         self
     }
 
     /// Start a blockstream/electrs esplora REST API server for bitcoin data indexing.
-    #[must_use] pub fn using_esplora(mut self, value: bool) -> Self {
+    #[must_use]
+    pub fn using_esplora(mut self, value: bool) -> Self {
         self.using_esplora = value;
         self
     }
@@ -490,7 +504,7 @@ impl RiftDevnetBuilder {
         let ethereum_devnet = crate::evm_devnet::EthDevnet::setup(
             deploy_mode,
             devnet_cache.clone(),
-            self.using_token_indexer,
+            self.token_indexer_database_url.clone(),
         )
         .await
         .map_err(|e| eyre::eyre!("[devnet builder] Failed to setup Ethereum devnet: {}", e))?;
@@ -499,8 +513,6 @@ impl RiftDevnetBuilder {
             "[Devnet Builder] Ethereum devnet setup took {:?}",
             ethereum_start.elapsed()
         );
-
-
 
         // 9) Fund optional EVM address with Ether + tokens
         let funding_start = if self.funded_evm_addresses.is_empty() {
@@ -515,13 +527,15 @@ impl RiftDevnetBuilder {
         for addr_str in self.funded_evm_addresses.clone() {
             use alloy::primitives::Address;
             use std::str::FromStr;
-            let address = Address::from_str(&addr_str).map_err(|e| eyre::eyre!("Failed to parse EVM address: {}", e))?; // TODO: check if this is correct
+            let address = Address::from_str(&addr_str)
+                .map_err(|e| eyre::eyre!("Failed to parse EVM address: {}", e))?; // TODO: check if this is correct
 
             // ~10 ETH
             ethereum_devnet
                 .fund_eth_address(
                     address,
-                    alloy::primitives::U256::from_str("10000000000000000000").map_err(|e| eyre::eyre!("Failed to parse U256: {}", e))?,
+                    alloy::primitives::U256::from_str("10000000000000000000")
+                        .map_err(|e| eyre::eyre!("Failed to parse U256: {}", e))?,
                 )
                 .await
                 .map_err(|e| eyre::eyre!("[devnet builder] Failed to fund ETH address: {}", e))?;
@@ -532,10 +546,7 @@ impl RiftDevnetBuilder {
                 .get_balance(address)
                 .await
                 .map_err(|e| eyre::eyre!("[devnet builder] Failed to get ETH balance: {}", e))?;
-            info!(
-                "[Devnet Builder] Ether Balance of {addr_str} => {eth_balance:?}"
-            );
-
+            info!("[Devnet Builder] Ether Balance of {addr_str} => {eth_balance:?}");
         }
         if let Some(start) = funding_start {
             info!("[Devnet Builder] Funded addresses in {:?}", start.elapsed());
@@ -547,7 +558,8 @@ impl RiftDevnetBuilder {
                 &ethereum_devnet,
                 self.using_esplora,
                 &mut join_set,
-            ).await?;
+            )
+            .await?;
         }
 
         // 11) Return the final devnet
@@ -582,7 +594,8 @@ impl RiftDevnetBuilder {
         ethereum_devnet
             .fund_eth_address(
                 hypernode_account.ethereum_address,
-                alloy::primitives::U256::from_str_radix("1000000000000000000000000", 10).map_err(|e| eyre::eyre!("Conversion error: {}", e))?,
+                alloy::primitives::U256::from_str_radix("1000000000000000000000000", 10)
+                    .map_err(|e| eyre::eyre!("Conversion error: {}", e))?,
             )
             .await
             .map_err(|e| {
@@ -595,7 +608,8 @@ impl RiftDevnetBuilder {
         ethereum_devnet
             .fund_eth_address(
                 market_maker_account.ethereum_address,
-                alloy::primitives::U256::from_str_radix("1000000000000000000000000", 10).map_err(|e| eyre::eyre!("Conversion error: {}", e))?,
+                alloy::primitives::U256::from_str_radix("1000000000000000000000000", 10)
+                    .map_err(|e| eyre::eyre!("Conversion error: {}", e))?,
             )
             .await
             .map_err(|e| {
@@ -623,7 +637,6 @@ impl RiftDevnetBuilder {
             "[Interactive Setup] Account funding took {:?}",
             funding_start.elapsed()
         );
-
 
         // Start auto-mining task
         info!("[Interactive Setup] Starting Bitcoin auto-mining task...");
@@ -696,10 +709,7 @@ impl RiftDevnetBuilder {
 
         Ok(())
     }
-
 }
-
-
 
 /// Holds the components of a multichain account including secret bytes and wallets.
 #[derive(Debug)]
@@ -713,12 +723,13 @@ pub struct MultichainAccount {
     /// The Ethereum address associated with the wallet
     pub ethereum_address: Address,
     /// The Bitcoin wallet derived from the secret
-    pub bitcoin_wallet:  P2WPKHBitcoinWallet
+    pub bitcoin_wallet: P2WPKHBitcoinWallet,
 }
 
 impl MultichainAccount {
     /// Creates a new multichain account from the given derivation salt
-    #[must_use] pub fn new(derivation_salt: u32) -> Self {
+    #[must_use]
+    pub fn new(derivation_salt: u32) -> Self {
         let secret_bytes: [u8; 32] = keccak256(derivation_salt.to_le_bytes()).into();
 
         let ethereum_wallet =
@@ -745,7 +756,8 @@ impl MultichainAccount {
     }
 
     /// Creates a new multichain account with the Bitcoin network explicitly specified
-    #[must_use] pub fn with_network(derivation_salt: u32, network: ::bitcoin::Network) -> Self {
+    #[must_use]
+    pub fn with_network(derivation_salt: u32, network: ::bitcoin::Network) -> Self {
         let secret_bytes: [u8; 32] = keccak256(derivation_salt.to_le_bytes()).into();
 
         let ethereum_wallet =

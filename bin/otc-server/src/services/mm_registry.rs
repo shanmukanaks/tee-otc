@@ -20,6 +20,9 @@ pub enum MMRegistryError {
         source: mpsc::error::SendError<ProtocolMessage<MMRequest>>,
     },
 
+    #[snafu(display("Invalid quote ID: {}", quote_id))]
+    InvalidQuoteId { quote_id: String },
+
     #[snafu(display("Failed to receive validation response: {}", source))]
     ResponseReceiveError {
         source: oneshot::error::RecvError,
@@ -37,7 +40,7 @@ pub struct MarketMakerConnection {
 #[derive(Clone)]
 pub struct MMRegistry {
     connections: Arc<DashMap<Uuid, MarketMakerConnection>>,
-    pending_validations: Arc<DashMap<String, oneshot::Sender<Result<bool>>>>,
+    pending_validations: Arc<DashMap<Uuid, oneshot::Sender<Result<bool>>>>,
     validation_timeout: Duration,
 }
 
@@ -80,10 +83,98 @@ impl MMRegistry {
         self.connections.contains_key(&market_maker_id)
     }
 
+
+    pub async fn notify_user_deposit(&self, market_maker_id: &Uuid, swap_id: &Uuid, quote_id: &Uuid, user_deposit_address: &str, user_tx_hash: &str) {
+        if let Some(conn) = self.connections.get(market_maker_id) {
+            let request = ProtocolMessage {
+                version: conn.protocol_version.clone(),
+                sequence: 0,
+                payload: MMRequest::UserDeposited {
+                    request_id: Uuid::new_v4(),
+                    swap_id: *swap_id,
+                    quote_id: *quote_id,
+                    user_tx_hash: user_tx_hash.to_string(),
+                    deposit_address: user_deposit_address.to_string(),
+                    timestamp: chrono::Utc::now(),
+                },
+            };
+            if let Err(e) = conn.sender.send(request).await {
+                error!(market_maker_id = %market_maker_id, error = %e, "Failed to send user deposit notification");
+            }
+        }
+    }
+    
+    pub async fn notify_user_deposit_confirmed(
+        &self, 
+        market_maker_id: &Uuid, 
+        swap_id: &Uuid, 
+        quote_id: &Uuid,
+        user_destination_address: &str,
+        mm_nonce: [u8; 16],
+        expected_amount: alloy::primitives::U256,
+        expected_chain: &str,
+        expected_token: &str,
+    ) {
+        if let Some(conn) = self.connections.get(market_maker_id) {
+            let request = ProtocolMessage {
+                version: conn.protocol_version.clone(),
+                sequence: 0,
+                payload: MMRequest::UserDepositConfirmed {
+                    request_id: Uuid::new_v4(),
+                    swap_id: *swap_id,
+                    quote_id: *quote_id,
+                    user_destination_address: user_destination_address.to_string(),
+                    mm_nonce,
+                    expected_amount,
+                    expected_chain: expected_chain.to_string(),
+                    expected_token: expected_token.to_string(),
+                    timestamp: chrono::Utc::now(),
+                },
+            };
+            
+            info!(
+                market_maker_id = %market_maker_id,
+                swap_id = %swap_id,
+                user_destination_address = %user_destination_address,
+                "Notifying MM that user deposit is confirmed - MM should send payment with nonce"
+            );
+            
+            if let Err(e) = conn.sender.send(request).await {
+                error!(market_maker_id = %market_maker_id, error = %e, "Failed to send user deposit confirmed notification");
+            }
+        } else {
+            warn!(
+                market_maker_id = %market_maker_id,
+                "Cannot notify MM - not connected"
+            );
+        }
+    }
+    
+    pub async fn notify_swap_complete(&self, market_maker_id: &Uuid, swap_id: &Uuid, user_deposit_private_key: &str, mm_tx_hash: &str) {
+        if let Some(conn) = self.connections.get(market_maker_id) {
+            let request = ProtocolMessage {
+                version: conn.protocol_version.clone(),
+                sequence: 0,
+                payload: MMRequest::SwapComplete {
+                    request_id: Uuid::new_v4(),
+                    swap_id: *swap_id,
+                    user_deposit_private_key: user_deposit_private_key.to_string(),
+                    user_withdrawal_tx: mm_tx_hash.to_string(),
+                    timestamp: chrono::Utc::now(),
+                },
+            };
+            if let Err(e) = conn.sender.send(request).await {
+                error!(market_maker_id = %market_maker_id, error = %e, "Failed to send swap complete notification");
+            }
+        }
+    }
+
     pub async fn validate_quote(
         &self,
-        market_maker_id: Uuid,
-        quote_id: String,
+        market_maker_id: &Uuid,
+        quote_id: &Uuid,
+        quote_hash: &[u8; 32],
+        user_destination_address: &str,
         response_tx: oneshot::Sender<Result<bool>>,
     ) {
         debug!(
@@ -103,16 +194,21 @@ impl MMRegistry {
             return;
         };
 
+
         let request = ProtocolMessage {
             version: mm_connection.protocol_version.clone(),
             sequence: 0, // TODO: Implement sequence tracking
             payload: MMRequest::ValidateQuote {
                 request_id: Uuid::new_v4(),
-                quote_id: Uuid::parse_str(&quote_id).unwrap_or_else(|_| Uuid::new_v4()),
-                user_id: Uuid::new_v4(), // TODO: Get actual user ID
+                quote_id: quote_id.clone(),
+                quote_hash: quote_hash.clone(),
+                user_destination_address: user_destination_address.to_string(),
                 timestamp: chrono::Utc::now(),
             },
         };
+
+        // Store the response channel before sending the request
+        self.pending_validations.insert(quote_id.clone(), response_tx);
 
         // Send the validation request
         if let Err(e) = mm_connection.sender.send(request).await {
@@ -121,18 +217,18 @@ impl MMRegistry {
                 error = %e,
                 "Failed to send validation request"
             );
-            let _ = response_tx.send(Err(MMRegistryError::MessageSendError { source: e }));
+            // Remove the pending validation since we failed to send
+            if let Some((_, tx)) = self.pending_validations.remove(&quote_id) {
+                let _ = tx.send(Err(MMRegistryError::MessageSendError { source: e }));
+            }
             return;
         }
-
-        // Store the response channel for when we get the MM's response
-        self.pending_validations.insert(quote_id, response_tx);
     }
 
     pub fn handle_validation_response(
         &self,
-        market_maker_id: Uuid,
-        quote_id: &str,
+        market_maker_id: &Uuid,
+        quote_id: &Uuid,
         accepted: bool,
     ) {
         debug!(
@@ -193,7 +289,7 @@ mod tests {
         let unknown_mm_id = Uuid::new_v4();
 
         
-        let () = registry.validate_quote(unknown_mm_id, "quote123".to_string(), response_tx).await;
+        let () = registry.validate_quote(&unknown_mm_id, &Uuid::new_v4(), &[0u8; 32], "0x123", response_tx).await;
         
         let result = response_rx.await.unwrap();
         assert!(matches!(
