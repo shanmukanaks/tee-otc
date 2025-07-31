@@ -1,8 +1,8 @@
 //   SPDX-License-Identifier: MIT
-// solc 0.8.28; solc SimpleERC20.sol --via-ir --optimize --bin
+// solc 0.8.28; solc GenericERC20.sol --via-ir --optimize --bin
 pragma solidity ^0.8.20;
 
-contract SimpleERC20 {
+contract GenericERC20 {
     string public s_name;
     string public s_symbol;
     uint8  public s_decimals;

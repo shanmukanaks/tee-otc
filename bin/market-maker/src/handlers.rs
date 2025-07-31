@@ -1,5 +1,5 @@
-use crate::config::Config;
 use crate::strategy::ValidationStrategy;
+use crate::{config::Config, wallet::WalletManager};
 use chrono::Utc;
 use otc_mm_protocol::{MMRequest, MMResponse, MMStatus, ProtocolMessage};
 use tracing::{info, warn};
@@ -7,12 +7,17 @@ use tracing::{info, warn};
 pub struct MessageHandler {
     config: Config,
     strategy: ValidationStrategy,
+    wallet_manager: WalletManager,
 }
 
 impl MessageHandler {
-    pub fn new(config: Config) -> Self {
+    pub fn new(config: Config, wallet_manager: WalletManager) -> Self {
         let strategy = ValidationStrategy::new(config.auto_accept);
-        Self { config, strategy }
+        Self {
+            config,
+            strategy,
+            wallet_manager,
+        }
     }
 
     pub fn handle_request(
@@ -32,7 +37,9 @@ impl MessageHandler {
                     quote_id, user_destination_address
                 );
 
-                let (accepted, rejection_reason) = self.strategy.validate_quote(quote_id, quote_hash, user_destination_address);
+                let (accepted, rejection_reason) =
+                    self.strategy
+                        .validate_quote(quote_id, quote_hash, user_destination_address);
 
                 info!(
                     "Quote {} validation result: accepted={}, reason={:?}",
@@ -94,14 +101,20 @@ impl MessageHandler {
             } => {
                 info!(
                     "User deposit confirmed for swap {}: MM should send {} {} on {} to {}",
-                    swap_id, expected_amount, expected_token, expected_chain, user_destination_address
+                    swap_id,
+                    expected_amount,
+                    expected_token,
+                    expected_chain,
+                    user_destination_address
                 );
                 info!("Quote ID: {}", quote_id);
                 info!("MM nonce to embed: {:?}", alloy::hex::encode(mm_nonce));
 
                 // TODO: Implement actual payment with embedded nonce
-                warn!("TODO: Send {} {} on {} to {} with embedded nonce", 
-                    expected_amount, expected_token, expected_chain, user_destination_address);
+                warn!(
+                    "TODO: Send {} {} on {} to {} with embedded nonce",
+                    expected_amount, expected_token, expected_chain, user_destination_address
+                );
 
                 // In a real implementation, we would:
                 // 1. Prepare the transaction to user_destination_address
@@ -132,16 +145,13 @@ impl MessageHandler {
             MMRequest::SwapComplete {
                 request_id,
                 swap_id,
-                
+
                 user_withdrawal_tx,
                 ..
             } => {
-                info!(
-                    "Swap {} complete, received user's private key",
-                    swap_id
-                );
+                info!("Swap {} complete, received user's private key", swap_id);
                 info!("User withdrawal tx: {}", user_withdrawal_tx);
-                
+
                 // TODO: Implement claiming logic
                 warn!("TODO: Implement claiming from user's wallet");
 

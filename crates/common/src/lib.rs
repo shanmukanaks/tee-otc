@@ -1,9 +1,10 @@
 mod alloy_ext;
 mod bitcoin_wallet;
+mod generic_erc20;
 pub use alloy_ext::*;
 pub use bitcoin_wallet::*;
+pub use generic_erc20::*;
 use snafu::ResultExt;
-
 
 pub fn handle_background_thread_result<T, E>(
     result: Option<Result<Result<T, E>, tokio::task::JoinError>>,
@@ -21,17 +22,19 @@ where
     }
 }
 
-
 #[derive(Debug, snafu::Snafu)]
 pub enum InitLoggerError {
     #[snafu(display("Failed to initialize logger: {}", source))]
-    LoggerFailed { source: Box<dyn std::error::Error + Send + Sync> },
+    LoggerFailed {
+        source: Box<dyn std::error::Error + Send + Sync>,
+    },
 }
 
 pub fn init_logger(log_level: &str) -> Result<(), InitLoggerError> {
     tracing_subscriber::fmt()
         .with_env_filter(log_level)
-        .try_init().context(LoggerFailedSnafu)?;
-    
+        .try_init()
+        .context(LoggerFailedSnafu)?;
+
     Ok(())
 }

@@ -11,6 +11,7 @@ TEE-OTC is a cross-chain OTC settlement system running in Trusted Execution Envi
 ## Recent Implementation Progress
 
 ### Swap State Machine (2025-07-22)
+
 - Implemented proper state tracking with PostgreSQL enum type `swap_status`
 - Added JSONB columns for rich deposit/settlement data tracking
 - Created state transition methods with validation in `swap_transitions.rs`
@@ -18,19 +19,22 @@ TEE-OTC is a cross-chain OTC settlement system running in Trusted Execution Envi
 - Migration: `bin/otc-server/migrations/20250722212703_update_swaps_state_machine.sql`
 
 ### Completed Implementation (Sprint 3 - Completed 2025-07-22)
+
 - **Market Maker Quote Validation**: WebSocket protocol for quote approval before swap creation
   - MM Registry service tracks active connections
-  - Real-time quote validation with 5-second timeout  
+  - Real-time quote validation with 5-second timeout
   - Market-maker binary with auto-accept/reject for testing
   - Full integration tests demonstrating the flow
   - See MARKET_MAKER_PLAN.md for implementation details
 
 ### Next Implementation Priority (Sprint 4)
+
 - **Settlement execution**: Implement actual blockchain transaction sending
 - **Refund execution**: Implement refund transaction logic
 - **Chain operations**: Real blockchain interaction (currently mocked)
 
 ### Current Sprint Status
+
 - Sprint 2 ✅ Complete: Swap state machine with monitoring service
 - Sprint 3 ✅ Complete: Market Maker integration for quote validation
 - Sprint 4 🔄 Next: Settlement & refund execution
@@ -72,5 +76,11 @@ TEE-OTC is a cross-chain OTC settlement system running in Trusted Execution Envi
 
 ## Testing
 
-- Run `make test-clean` to run all tests with a clean environment
-- This command spins up a fresh test database, runs all tests, and cleans up afterward
+- When running any test for the first time run:
+
+```
+make dev-db
+```
+
+- This command spins up a test database
+  After this point, you can use normal cargo nextest to run your tests

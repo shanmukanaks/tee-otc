@@ -32,7 +32,7 @@ electrsd = { git = "https://github.com/RCasatta/electrsd", rev = "bdc97e879bad82
 esplora-client = {git = "https://github.com/riftresearch/rust-esplora-client" , rev = "a571328ff799993f877d87db8dad6e4c6b313225", features = ["async", "tokio"]}
 
 
-alloy = { version = "1.0.23", features = ["full", "node-bindings"] }
+alloy = { version = "1.0.23", features = ["full", "node-bindings", "json-rpc"] }
 tokio = { version = "1.40", features = ["full"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"

@@ -1,8 +1,9 @@
-
 mod client;
 mod config;
+pub mod evm_wallet;
 mod handlers;
 mod strategy;
+pub mod wallet;
 
 use clap::Parser;
 use common::handle_background_thread_result;
@@ -10,6 +11,8 @@ use config::Config;
 use snafu::{prelude::*, ResultExt};
 use tokio::task::JoinSet;
 use tracing::info;
+
+use crate::wallet::WalletManager;
 
 #[derive(Debug, Snafu)]
 pub enum Error {
@@ -20,7 +23,9 @@ pub enum Error {
     Client { source: client::ClientError },
 
     #[snafu(display("Background thread error: {}", source))]
-    BackgroundThread { source: Box<dyn std::error::Error + Send + Sync> },
+    BackgroundThread {
+        source: Box<dyn std::error::Error + Send + Sync>,
+    },
 }
 
 pub type Result<T, E = Error> = std::result::Result<T, E>;
@@ -32,11 +37,11 @@ pub struct MarketMakerArgs {
     /// Market maker identifier
     #[arg(long, env = "MM_ID")]
     pub market_maker_id: String,
-    
+
     /// API key ID (UUID) for authentication
     #[arg(long, env = "MM_API_KEY_ID")]
     pub api_key_id: String,
-    
+
     /// API key for authentication
     #[arg(long, env = "MM_API_KEY")]
     pub api_key: String,
@@ -69,7 +74,10 @@ pub async fn run_market_maker(args: MarketMakerArgs) -> Result<()> {
         max_reconnect_attempts: 5,
     };
 
-    let otc_fill_client = client::OtcFillClient::new(config);
+    let wallet_manager = WalletManager::new();
+    // TODO: Add wallet implementations to wallet_manager
+
+    let otc_fill_client = client::OtcFillClient::new(config, wallet_manager);
     join_set.spawn(async move { otc_fill_client.run().await });
     // TODO(shanmu): Add RFQ client to handle Market Maker quote creation here
 

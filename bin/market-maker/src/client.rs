@@ -1,10 +1,13 @@
-use crate::config::Config;
 use crate::handlers::MessageHandler;
+use crate::{config::Config, wallet::WalletManager};
 use futures_util::{SinkExt, StreamExt};
 use otc_mm_protocol::{MMRequest, ProtocolMessage};
 use snafu::prelude::*;
 use tokio::time::{sleep, Duration};
-use tokio_tungstenite::{connect_async_with_config, tungstenite::{Message, http}};
+use tokio_tungstenite::{
+    connect_async_with_config,
+    tungstenite::{http, Message},
+};
 use tracing::{error, info, warn};
 use url::Url;
 
@@ -29,8 +32,9 @@ pub enum ClientError {
     #[snafu(display("Maximum reconnection attempts reached"))]
     MaxReconnectAttempts,
     #[snafu(display("Background thread exited: {}", source))]
-    BackgroundThreadExited { source: Box<dyn std::error::Error + Send + Sync> },
-
+    BackgroundThreadExited {
+        source: Box<dyn std::error::Error + Send + Sync>,
+    },
 }
 
 type Result<T, E = ClientError> = std::result::Result<T, E>;
@@ -41,8 +45,8 @@ pub struct OtcFillClient {
 }
 
 impl OtcFillClient {
-    pub fn new(config: Config) -> Self {
-        let handler = MessageHandler::new(config.clone());
+    pub fn new(config: Config, wallet_manager: WalletManager) -> Self {
+        let handler = MessageHandler::new(config.clone(), wallet_manager);
         Self { config, handler }
     }
 
@@ -78,7 +82,7 @@ impl OtcFillClient {
         }
     }
 
-    // TODO(tee): When TEE logic is implemented, we need a way to validate that we're connected to a valid TEE 
+    // TODO(tee): When TEE logic is implemented, we need a way to validate that we're connected to a valid TEE
     async fn connect_and_run(&self) -> Result<()> {
         let url = Url::parse(&self.config.otc_ws_url).context(UrlParseSnafu)?;
         info!("Connecting to {}", url);
@@ -91,7 +95,10 @@ impl OtcFillClient {
             .header("Connection", "Upgrade")
             .header("Upgrade", "websocket")
             .header("Sec-WebSocket-Version", "13")
-            .header("Sec-WebSocket-Key", tokio_tungstenite::tungstenite::handshake::client::generate_key())
+            .header(
+                "Sec-WebSocket-Key",
+                tokio_tungstenite::tungstenite::handshake::client::generate_key(),
+            )
             .header("X-API-Key-ID", &self.config.api_key_id)
             .header("X-API-Key", &self.config.api_key)
             .body(())
@@ -100,7 +107,7 @@ impl OtcFillClient {
                     http::Response::builder()
                         .status(400)
                         .body(Some(format!("Failed to build request: {e}").into_bytes()))
-                        .unwrap()
+                        .unwrap(),
                 ),
             })?;
 
@@ -126,8 +133,8 @@ impl OtcFillClient {
                     match serde_json::from_str::<ProtocolMessage<MMRequest>>(&text) {
                         Ok(protocol_msg) => {
                             if let Some(response) = self.handler.handle_request(&protocol_msg) {
-                                let response_json = serde_json::to_string(&response)
-                                    .context(SerializationSnafu)?;
+                                let response_json =
+                                    serde_json::to_string(&response).context(SerializationSnafu)?;
                                 write
                                     .send(Message::Text(response_json))
                                     .await
