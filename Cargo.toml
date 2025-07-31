@@ -5,6 +5,7 @@ members = [
     "crates/*",
     "integration-tests"
 ]
+exclude = ["empty-sqlite-shim"]
 
 [workspace.package]
 edition = "2021"
@@ -41,7 +42,6 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 snafu = { version = "0.8", features = ["std", "backtrace"] }
 axum = { version = "0.7", features = ["ws"] }
 clap = { version = "4.5", features = ["derive", "env"] }
-sqlx = { version = "0.8", features = ["runtime-tokio", "postgres", "uuid", "chrono", "migrate"] }
 uuid = { version = "1.10", features = ["v4", "serde"] }
 chrono = { version = "0.4", features = ["serde"] }
 config = { version = "0.14", features = ["toml"] }
@@ -67,10 +67,13 @@ hkdf = "0.12"
 bip39 = "2.1.0"
 async-trait = "0.1"
 bitcoin-coin-selection =  { version = "0.7.0", features = ["rand"]}
-
+sqlx = { version = "0.8",  features = ["runtime-tokio", "tls-native-tls", "postgres", "uuid", "chrono", "migrate"] }
+bdk_wallet = { version = "2.0.0", features=["rusqlite"] }
+bdk_esplora = { version = "0.22.0", features=["tokio","async"]}
 
 [profile.dev.package.sqlx-macros]
 opt-level = 3
 
 [patch.crates-io]
 corepc-node = { git = "https://github.com/alpinevm/corepc", rev = "dc4809ee032b378097c37e73e2929ceb9ee62c54" }
+sqlx-sqlite = { path = "sqlx-sqlite-shim" }

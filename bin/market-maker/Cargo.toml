@@ -30,5 +30,10 @@ clap = { workspace = true }
 uuid = { workspace = true }
 chrono = { workspace = true }
 url = { workspace = true }
+bdk_wallet = { workspace = true }
+bdk_esplora = { workspace = true }
+sqlx = { workspace = true }
+
+
 
 [dev-dependencies]

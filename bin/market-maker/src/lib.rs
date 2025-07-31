@@ -1,3 +1,4 @@
+pub mod bitcoin_wallet;
 mod client;
 mod config;
 pub mod evm_wallet;
