@@ -9,13 +9,13 @@ use tokio::task::JoinSet;
 use tokio::time::Instant;
 
 use bitcoin::{Address as BitcoinAddress, Amount};
-use bitcoincore_rpc_async::{Auth, Client as AsyncBitcoinClient};
 use bitcoincore_rpc_async::RpcApi;
+use bitcoincore_rpc_async::{Auth, Client as AsyncBitcoinClient};
 use corepc_node::Node as BitcoinRegtest;
 use electrsd::ElectrsD;
 use esplora_client::AsyncClient as EsploraClient;
 
-use crate::{get_new_temp_dir, RiftDevnetCache, Result};
+use crate::{get_new_temp_dir, Result, RiftDevnetCache};
 
 /// Holds all Bitcoin-related devnet state.
 pub struct BitcoinDevnet {
@@ -98,7 +98,11 @@ impl BitcoinDevnet {
                 }
                 Err(e) => {
                     if i == 19 {
-                        return Err(eyre::eyre!("Failed to read cookie file after 20 attempts: {}", e).into());
+                        return Err(eyre::eyre!(
+                            "Failed to read cookie file after 20 attempts: {}",
+                            e
+                        )
+                        .into());
                     }
                     info!("Cookie file not ready yet (attempt {}), waiting...", i + 1);
                     tokio::time::sleep(Duration::from_millis(500)).await;
@@ -123,7 +127,8 @@ impl BitcoinDevnet {
 
         let bitcoin_rpc_client: Arc<AsyncBitcoinClient> = Arc::new(
             AsyncBitcoinClient::new(rpc_url.clone(), Auth::CookieFile(cookie.clone()))
-            .await.map_err(|e| eyre::eyre!("Failed to create async Bitcoin RPC client: {}", e))?,
+                .await
+                .map_err(|e| eyre::eyre!("Failed to create async Bitcoin RPC client: {}", e))?,
         );
 
         // Always ensure the wallet exists and recreate client with wallet URL
@@ -157,7 +162,8 @@ impl BitcoinDevnet {
                                 "Failed to create wallet '{}': {}",
                                 wallet_name,
                                 create_err
-                            ).into());
+                            )
+                            .into());
                         }
                     }
                 }
@@ -173,12 +179,14 @@ impl BitcoinDevnet {
         );
         let bitcoin_rpc_client = Arc::new(
             AsyncBitcoinClient::new(wallet_rpc_url, Auth::CookieFile(cookie.clone()))
-                .await.map_err(|e| eyre::eyre!("Failed to create async Bitcoin RPC client: {}", e))?,
+                .await
+                .map_err(|e| eyre::eyre!("Failed to create async Bitcoin RPC client: {}", e))?,
         );
 
         let alice_address = bitcoin_rpc_client
             .get_new_address(None, None)
-            .await.map_err(|e| eyre::eyre!("Failed to get new address: {}", e))?
+            .await
+            .map_err(|e| eyre::eyre!("Failed to get new address: {}", e))?
             .assume_checked();
 
         if let Some(_devnet_cache) = &devnet_cache {
@@ -188,34 +196,38 @@ impl BitcoinDevnet {
             info!("Mining 101 blocks to miner...");
             bitcoin_rpc_client
                 .generate_to_address(101, &alice_address)
-                .await.map_err(|e| eyre::eyre!("Failed to mine blocks: {}", e))?;
+                .await
+                .map_err(|e| eyre::eyre!("Failed to mine blocks: {}", e))?;
 
             info!("Mined 101 blocks in {:?}", mine_time.elapsed());
         }
 
-
-        let ( electrsd, esplora_client, esplora_url, electrsd_datadir) = 
+        let (electrsd, esplora_client, esplora_url, electrsd_datadir) =
             Self::setup_electrsd_and_esplora(
                 using_esplora,
                 fixed_esplora_url,
                 devnet_cache,
                 bitcoin_regtest.clone(),
-            ).await.map_err(|e| eyre::eyre!("Failed to setup electrsd and esplora: {}", e))?;
+            )
+            .await
+            .map_err(|e| eyre::eyre!("Failed to setup electrsd and esplora: {}", e))?;
 
         // If user wants to fund a specific BTC address
         let mut funded_sats = 0;
         let mut txids = Vec::new();
         for addr_str in funded_addresses {
             let amount = 4_995_000_000; // for example, ~49.95 BTC in sats
-            let external_address = BitcoinAddress::from_str(&addr_str).map_err(|e| eyre::eyre!("Failed to parse address: {}", e))?.assume_checked();
+            let external_address = BitcoinAddress::from_str(&addr_str)
+                .map_err(|e| eyre::eyre!("Failed to parse address: {}", e))?
+                .assume_checked();
             let txid = bitcoin_rpc_client
                 .send_to_address(&external_address, Amount::from_sat(amount))
-                .await.map_err(|e| eyre::eyre!("Failed to send to address: {}", e))?
-                .txid().map_err(|e| eyre::eyre!("Failed to get txid: {}", e))?;
+                .await
+                .map_err(|e| eyre::eyre!("Failed to send to address: {}", e))?
+                .txid()
+                .map_err(|e| eyre::eyre!("Failed to get txid: {}", e))?;
 
-            info!(
-                "Funded address {addr_str} with {amount} sats @ {txid}"
-            );
+            info!("Funded address {addr_str} with {amount} sats @ {txid}");
 
             txids.push(txid);
             funded_sats += amount;
@@ -226,7 +238,8 @@ impl BitcoinDevnet {
             info!("Mining a block to confirm funding transactions...");
             bitcoin_rpc_client
                 .generate_to_address(1, &alice_address)
-                .await.map_err(|e| eyre::eyre!("Failed to mine blocks: {}", e))?;
+                .await
+                .map_err(|e| eyre::eyre!("Failed to mine blocks: {}", e))?;
         }
 
         // ensure esplora sees the txids
@@ -234,7 +247,10 @@ impl BitcoinDevnet {
             for txid in txids {
                 let mut attempts = 0;
                 while attempts < 25 {
-                    let tx = esplora_client.get_tx_status(&txid).await.map_err(|e| eyre::eyre!("Failed to get tx status: {}", e))?;
+                    let tx = esplora_client
+                        .get_tx_status(&txid)
+                        .await
+                        .map_err(|e| eyre::eyre!("Failed to get tx status: {}", e))?;
                     if tx.confirmed {
                         break;
                     }
@@ -244,7 +260,8 @@ impl BitcoinDevnet {
                         return Err(eyre::eyre!(
                             "Failed to confirm funding transaction on esplora {}",
                             txid
-                        ).into());
+                        )
+                        .into());
                     }
                 }
             }
@@ -266,7 +283,10 @@ impl BitcoinDevnet {
         };
 
         // Get the actual blockchain height
-        let blockchain_info = bitcoin_rpc_client.get_blockchain_info().await.map_err(|e| eyre::eyre!("Failed to get blockchain info: {}", e))?;
+        let blockchain_info = bitcoin_rpc_client
+            .get_blockchain_info()
+            .await
+            .map_err(|e| eyre::eyre!("Failed to get blockchain info: {}", e))?;
         let current_height = blockchain_info.blocks as u32;
 
         Ok((devnet, current_height))
@@ -368,7 +388,9 @@ impl BitcoinDevnet {
             let test_start = Instant::now();
             let test_resp = client.get_fee_estimates().await;
             if test_resp.is_err() {
-                return Err(eyre::eyre!("Electrs client failed {}", test_resp.err().unwrap()).into());
+                return Err(
+                    eyre::eyre!("Electrs client failed {}", test_resp.err().unwrap()).into(),
+                );
             }
             info!(
                 "[Bitcoin Setup] Esplora client test took {:?}",
@@ -389,7 +411,8 @@ impl BitcoinDevnet {
     pub async fn mine_blocks(&self, blocks: u64) -> Result<()> {
         self.rpc_client
             .generate_to_address(blocks, &self.miner_address)
-            .await.map_err(|e| eyre::eyre!("Failed to mine blocks: {}", e))?;
+            .await
+            .map_err(|e| eyre::eyre!("Failed to mine blocks: {}", e))?;
         Ok(())
     }
 
@@ -411,10 +434,19 @@ impl BitcoinDevnet {
             mine_start.elapsed()
         );
 
-        let send_result = self.rpc_client.send_to_address(&address, amount).await.map_err(|e| eyre::eyre!("Failed to send to address: {}", e))?;
-        let txid = Txid::from_str(&send_result.0).map_err(|e| eyre::eyre!("Failed to parse txid: {}", e))?;
+        let send_result = self
+            .rpc_client
+            .send_to_address(&address, amount)
+            .await
+            .map_err(|e| eyre::eyre!("Failed to send to address: {}", e))?;
+        let txid = Txid::from_str(&send_result.0)
+            .map_err(|e| eyre::eyre!("Failed to parse txid: {}", e))?;
 
-        let full_transaction = self.rpc_client.get_raw_transaction_verbose(&txid).await.map_err(|e| eyre::eyre!("Failed to get raw transaction verbose: {}", e))?;
+        let full_transaction = self
+            .rpc_client
+            .get_raw_transaction_verbose(&txid)
+            .await
+            .map_err(|e| eyre::eyre!("Failed to get raw transaction verbose: {}", e))?;
         // mine the tx
         let confirm_start = Instant::now();
         self.mine_blocks(1).await?;
@@ -428,5 +460,25 @@ impl BitcoinDevnet {
             deal_start.elapsed()
         );
         Ok(full_transaction)
+    }
+
+    pub async fn wait_for_esplora_sync(&self, timeout: Duration) -> Result<()> {
+        let start_time = Instant::now();
+        while start_time.elapsed() < timeout {
+            let height = self
+                .esplora_client
+                .as_ref()
+                .unwrap()
+                .get_height()
+                .await
+                .unwrap();
+            if height == self.rpc_client.get_block_count().await.unwrap() as u32 {
+                return Ok(());
+            }
+
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+
+        Err(crate::DevnetError::EsploraSyncTimeout { timeout })
     }
 }

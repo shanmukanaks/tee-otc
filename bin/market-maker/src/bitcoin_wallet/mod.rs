@@ -1,101 +1,238 @@
-use std::{collections::BTreeSet, future::Future, io::Write, pin::Pin};
+pub mod transaction_broadcaster;
 
-use bdk_esplora::{esplora_client, EsploraAsyncExt};
+use std::sync::Arc;
+
+use async_trait::async_trait;
+use bdk_esplora::esplora_client;
 use bdk_wallet::rusqlite::Connection;
 use bdk_wallet::{
-    bitcoin::{Amount, Network},
-    AsyncWalletPersister, ChangeSet, KeychainKind, SignOptions, Wallet,
+    bitcoin::{self, Network},
+    error::CreateTxError,
+    signer::SignerError,
+    CreateParams, KeychainKind, LoadParams, LoadWithPersistError, PersistedWallet,
 };
-use snafu::{ResultExt, Whatever};
+use otc_models::{ChainType, Currency, TokenIdentifier};
+use snafu::{ResultExt, Snafu};
+use tokio::sync::Mutex;
+use tokio::task::JoinSet;
+use tracing::info;
 
-const SEND_AMOUNT: Amount = Amount::from_sat(5000);
-const STOP_GAP: usize = 5;
+use crate::wallet::{self, Wallet as WalletTrait, WalletError};
+
+const STOP_GAP: usize = 50;
 const PARALLEL_REQUESTS: usize = 5;
+const BALANCE_BUFFER_PERCENT: u64 = 25; // 25% buffer
 
-const DB_PATH: &str = "bdk-example-esplora-async.sqlite";
-const NETWORK: Network = Network::Signet;
-const EXTERNAL_DESC: &str = "wpkh(tprv8ZgxMBicQKsPdy6LMhUtFHAgpocR8GC6QmwMSFpZs7h6Eziw3SpThFfczTDh5rW2krkqffa11UpX3XkeTTB2FvzZKWXqPY54Y6Rq4AQ5R8L/84'/1'/0'/0/*)";
-const INTERNAL_DESC: &str = "wpkh(tprv8ZgxMBicQKsPdy6LMhUtFHAgpocR8GC6QmwMSFpZs7h6Eziw3SpThFfczTDh5rW2krkqffa11UpX3XkeTTB2FvzZKWXqPY54Y6Rq4AQ5R8L/84'/1'/0'/1/*)";
-const ESPLORA_URL: &str = "http://signet.bitcoindevkit.net";
-// TODO: Build struct now that demo code is compiling
+#[derive(Debug, Snafu)]
+pub enum BitcoinWalletError {
+    #[snafu(display("Failed to open database: {}", source))]
+    OpenDatabase { source: bdk_wallet::rusqlite::Error },
 
-#[tokio::main]
-async fn main() -> Result<(), Whatever> {
-    let mut conn = Connection::open(DB_PATH).whatever_context("open_db")?;
+    #[snafu(display("Failed to load wallet: {}", source))]
+    LoadWallet {
+        source: Box<LoadWithPersistError<bdk_wallet::rusqlite::Error>>,
+    },
 
-    let wallet_opt = Wallet::load()
-        .descriptor(KeychainKind::External, Some(EXTERNAL_DESC))
-        .descriptor(KeychainKind::Internal, Some(INTERNAL_DESC))
-        .extract_keys()
-        .check_network(NETWORK)
-        .load_wallet(&mut conn)
-        .whatever_context("load_wallet")?;
-    let mut wallet = match wallet_opt {
-        Some(wallet) => wallet,
-        None => Wallet::create(EXTERNAL_DESC, INTERNAL_DESC)
-            .network(NETWORK)
-            .create_wallet(&mut conn)
-            .whatever_context("create_wallet")?,
-    };
+    #[snafu(display("Failed to create wallet: {}", source))]
+    CreateWallet {
+        source: Box<bdk_wallet::CreateWithPersistError<bdk_wallet::rusqlite::Error>>,
+    },
 
-    let address = wallet.next_unused_address(KeychainKind::External);
-    wallet.persist(&mut conn).whatever_context("persist")?;
-    println!("Next unused address: ({}) {}", address.index, address);
+    #[snafu(display("Failed to persist wallet: {}", source))]
+    PersistWallet { source: bdk_wallet::rusqlite::Error },
 
-    let balance = wallet.balance();
-    println!("Wallet balance before syncing: {}", balance.total());
+    #[snafu(display("Failed to build Esplora client: {}", source))]
+    BuildEsploraClient {
+        source: bdk_esplora::esplora_client::Error,
+    },
 
-    print!("Syncing...");
-    let client = esplora_client::Builder::new(ESPLORA_URL)
-        .build_async()
-        .whatever_context("build_async")?;
+    #[snafu(display("Failed to sync wallet: {}", source))]
+    SyncWallet {
+        source: Box<bdk_esplora::esplora_client::Error>,
+    },
 
-    let request = wallet.start_full_scan().inspect({
-        let mut stdout = std::io::stdout();
-        let mut once = BTreeSet::<KeychainKind>::new();
-        move |keychain, spk_i, _| {
-            if once.insert(keychain) {
-                print!("\nScanning keychain [{:?}]", keychain);
+    #[snafu(display("Failed to apply update"))]
+    ApplyUpdate,
+
+    #[snafu(display("Failed to build transaction: {}", source))]
+    BuildTransaction { source: CreateTxError },
+
+    #[snafu(display("Failed to sign transaction: {}", source))]
+    SignTransaction { source: SignerError },
+
+    #[snafu(display("Failed to extract transaction: {}", source))]
+    ExtractTransaction {
+        source: bdk_wallet::bitcoin::psbt::ExtractTxError,
+    },
+
+    #[snafu(display("Failed to broadcast transaction: {}", source))]
+    BroadcastTransaction {
+        source: bdk_esplora::esplora_client::Error,
+    },
+
+    #[snafu(display("Invalid Bitcoin address: {}", address))]
+    InvalidAddress { address: String },
+
+    #[snafu(display("Failed to parse address: {}", source))]
+    ParseAddress {
+        source: bitcoin::address::ParseError,
+    },
+
+    #[snafu(display("Insufficient balance"))]
+    InsufficientBalance,
+}
+
+pub struct BitcoinWallet {
+    pub tx_broadcaster: transaction_broadcaster::BitcoinTransactionBroadcaster,
+    wallet: Arc<Mutex<PersistedWallet<Connection>>>,
+}
+
+impl BitcoinWallet {
+    pub async fn new(
+        db_path: &str,
+        external_descriptor: &str,
+        network: Network,
+        esplora_url: &str,
+        join_set: &mut JoinSet<transaction_broadcaster::Result<()>>,
+    ) -> Result<Self, BitcoinWalletError> {
+        let mut conn = Connection::open(db_path).context(OpenDatabaseSnafu)?;
+
+        // Try to load existing wallet
+        let load_params = LoadParams::new()
+            .descriptor(
+                KeychainKind::External,
+                Some(external_descriptor.to_string()),
+            )
+            .extract_keys()
+            .check_network(network);
+
+        let wallet_opt = PersistedWallet::load(&mut conn, load_params).map_err(|e| {
+            BitcoinWalletError::LoadWallet {
+                source: Box::new(e),
             }
-            print!(" {:<3}", spk_i);
-            stdout.flush().expect("must flush")
-        }
-    });
+        })?;
 
-    let update = client
-        .full_scan(request, STOP_GAP, PARALLEL_REQUESTS)
-        .await
-        .whatever_context("full_scan")?;
+        let wallet = match wallet_opt {
+            Some(wallet) => wallet,
+            None => {
+                // Create new wallet
+                let create_params =
+                    CreateParams::new_single(external_descriptor.to_string()).network(network);
 
-    wallet
-        .apply_update(update)
-        .whatever_context("apply_update")?;
-    wallet.persist(&mut conn).whatever_context("persist")?;
-    println!();
+                PersistedWallet::create(&mut conn, create_params).map_err(|e| {
+                    BitcoinWalletError::CreateWallet {
+                        source: Box::new(e),
+                    }
+                })?
+            }
+        };
 
-    let balance = wallet.balance();
-    println!("Wallet balance after syncing: {}", balance.total());
+        let esplora_client = esplora_client::Builder::new(esplora_url)
+            .build_async()
+            .context(BuildEsploraClientSnafu)?;
 
-    if balance.total() < SEND_AMOUNT {
-        println!(
-            "Please send at least {} to the receiving address",
-            SEND_AMOUNT
+        let wallet = Arc::new(Mutex::new(wallet));
+        let connection = Arc::new(Mutex::new(conn));
+        let esplora_client = Arc::new(esplora_client);
+        
+        let tx_broadcaster = transaction_broadcaster::BitcoinTransactionBroadcaster::new(
+            wallet.clone(),
+            connection.clone(),
+            esplora_client.clone(),
+            network,
+            join_set,
         );
-        std::process::exit(0);
+
+        Ok(Self {
+            tx_broadcaster,
+            wallet,
+        })
     }
 
-    let mut tx_builder = wallet.build_tx();
-    tx_builder.add_recipient(address.script_pubkey(), SEND_AMOUNT);
+    async fn check_balance(&self, currency: &Currency) -> Result<bool, BitcoinWalletError> {
+        let wallet = self.wallet.lock().await;
+        let balance = wallet.balance();
+        
+        let amount_sats = currency.amount.to::<u64>();
+        let required_balance = balance_with_buffer(amount_sats);
+        
+        Ok(balance.total().to_sat() > required_balance)
+    }
+}
 
-    let mut psbt = tx_builder.finish().whatever_context("finish")?;
-    let finalized = wallet
-        .sign(&mut psbt, SignOptions::default())
-        .whatever_context("sign")?;
-    assert!(finalized);
+#[async_trait]
+impl WalletTrait for BitcoinWallet {
+    async fn create_transaction(
+        &self,
+        currency: &Currency,
+        to_address: &str,
+        nonce: Option<[u8; 16]>,
+    ) -> wallet::Result<String> {
+        ensure_valid_currency(currency)?;
 
-    let tx = psbt.extract_tx().whatever_context("extract_tx")?;
-    client.broadcast(&tx).await.whatever_context("broadcast")?;
-    println!("Tx broadcasted! Txid: {}", tx.compute_txid());
+        info!(
+            "Queueing Bitcoin transaction to {} for {:?}",
+            to_address, currency
+        );
 
+        // Send transaction request to the broadcaster
+        self.tx_broadcaster
+            .broadcast_transaction(currency.clone(), to_address.to_string(), nonce)
+            .await
+            .map_err(|e| match e {
+                transaction_broadcaster::TransactionBroadcasterError::InvalidCurrency => {
+                    WalletError::UnsupportedCurrency {
+                        currency: currency.clone(),
+                    }
+                }
+                transaction_broadcaster::TransactionBroadcasterError::InsufficientBalance => {
+                    WalletError::InsufficientBalance {
+                        required: currency.amount.to_string(),
+                        available: "unknown".to_string(),
+                    }
+                }
+                transaction_broadcaster::TransactionBroadcasterError::ParseAddress { reason } => {
+                    WalletError::ParseAddressFailed { context: reason }
+                }
+                _ => WalletError::TransactionCreationFailed {
+                    reason: e.to_string(),
+                },
+            })
+    }
+
+    async fn can_fill(&self, currency: &Currency) -> wallet::Result<bool> {
+        if ensure_valid_currency(currency).is_err() {
+            return Ok(false);
+        }
+
+        self.check_balance(currency)
+            .await
+            .map_err(|e| WalletError::BalanceCheckFailed {
+                reason: e.to_string(),
+            })
+    }
+}
+
+fn ensure_valid_currency(currency: &Currency) -> Result<(), WalletError> {
+    if !matches!(currency.chain, ChainType::Bitcoin)
+        || !matches!(currency.token, TokenIdentifier::Native)
+    {
+        return Err(WalletError::UnsupportedCurrency {
+            currency: currency.clone(),
+        });
+    }
+
+    // Bitcoin has 8 decimals
+    if currency.decimals != 8 {
+        return Err(WalletError::UnsupportedCurrency {
+            currency: currency.clone(),
+        });
+    }
+
+    info!("Bitcoin currency is valid: {:?}", currency);
     Ok(())
+}
+
+fn balance_with_buffer(balance_sats: u64) -> u64 {
+    balance_sats + (balance_sats * BALANCE_BUFFER_PERCENT) / 100
 }

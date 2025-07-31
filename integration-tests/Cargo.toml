@@ -21,6 +21,7 @@ devnet = {workspace = true}
 alloy = {workspace =true}
 tracing = {workspace =true}
 evm-token-indexer-client = {workspace = true}
+bitcoincore-rpc-async = {workspace = true}
 bitcoin = {workspace = true}
 common = {workspace = true}
 otc-models = {workspace = true}

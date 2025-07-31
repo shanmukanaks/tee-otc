@@ -13,4 +13,7 @@ mod simple_swap_test;
 mod indexer_client_test;
 
 #[cfg(test)]
-mod evm_wallet_nonce_retry_test;
+mod evm_wallet_test;
+
+#[cfg(test)]
+mod bitcoin_wallet_test;

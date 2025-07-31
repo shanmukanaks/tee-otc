@@ -330,6 +330,9 @@ impl RiftDevnetCache {
 pub enum DevnetError {
     #[snafu(display("Failed to build devnet: {}", source))]
     Build { source: eyre::Report },
+
+    #[snafu(display("Timeout waiting for esplora to sync after {timeout:?}"))]
+    EsploraSyncTimeout { timeout: std::time::Duration },
 }
 
 impl From<eyre::Report> for DevnetError {
