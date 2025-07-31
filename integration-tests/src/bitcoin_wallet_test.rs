@@ -1,4 +1,4 @@
-use alloy::primitives::U256;
+use alloy::{hex, primitives::U256};
 use bitcoin::{Network, PrivateKey};
 use bitcoincore_rpc_async::RpcApi;
 use devnet::{MultichainAccount, RiftDevnet};
@@ -153,12 +153,18 @@ async fn test_bitcoin_wallet_basic_operations(
         .create_transaction(&btc_currency, &user_btc_address, None)
         .await;
 
+    let mm_nonce = hex!("deadbeefdeadbeefdeadbeefdeadbeef");
+    let tx_result3 = bitcoin_wallet
+        .create_transaction(&btc_currency, &user_btc_address, Some(mm_nonce))
+        .await;
+
     assert!(
         tx_result1.is_ok() || tx_result2.is_ok(),
         "Should create a transaction {tx_result1:?} or {tx_result2:?}"
     );
     let txid1 = tx_result1.unwrap();
     let txid2 = tx_result2.unwrap();
+    let txid3 = tx_result3.unwrap();
     info!("Transaction created: {:?}", txid1);
     info!("Transaction created: {:?}", txid2);
     // mine
@@ -178,8 +184,24 @@ async fn test_bitcoin_wallet_basic_operations(
         .await
         .unwrap();
 
-    println!("tx1: {tx1:#?}\n");
-    println!("tx2: {tx2:#?}");
+    let tx3 = devnet
+        .bitcoin
+        .rpc_client
+        .get_raw_transaction_verbose(&txid3.parse::<bitcoin::Txid>().unwrap())
+        .await
+        .unwrap();
+
+    if tx1.confirmations.unwrap_or(0) != 1 {
+        panic!("tx1 should be mined {tx1:#?}");
+    } else if tx2.confirmations.unwrap_or(0) != 1 {
+        panic!("tx2 should be mined {tx2:#?}");
+    } else if tx3.confirmations.unwrap_or(0) != 1 {
+        panic!("tx3 should be mined {tx3:#?}");
+    }
+
+    if !tx3.hex.contains(&hex::encode(mm_nonce)) {
+        panic!("tx3 should contain the mm_nonce {tx3:#?}");
+    }
 
     // Clean up
     join_set.abort_all();

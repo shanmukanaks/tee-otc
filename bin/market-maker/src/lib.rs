@@ -29,7 +29,7 @@ pub enum Error {
     },
 }
 
-pub type Result<T, E = Error> = std::result::Result<T, E>;
+pub type Result<T, E = Error> = std::result::Result<T, Box<E>>;
 
 #[derive(Parser, Debug)]
 #[command(name = "market-maker")]
