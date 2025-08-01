@@ -16,8 +16,8 @@ async fn test_indexer_client(_: PoolOptions<sqlx::Postgres>, connect_options: Pg
         .await
         .unwrap()
         .0;
-    // now mint some token
 
+    // now mint some token
     info!("Minting CB-BTC to funded address");
     devnet
         .ethereum

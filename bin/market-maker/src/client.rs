@@ -129,10 +129,12 @@ impl OtcFillClient {
                         continue;
                     }
 
+                    // TODO: Do we want to support concurrent messaging?
                     // Otherwise, try to parse as a protocol message
                     match serde_json::from_str::<ProtocolMessage<MMRequest>>(&text) {
                         Ok(protocol_msg) => {
-                            if let Some(response) = self.handler.handle_request(&protocol_msg) {
+                            if let Some(response) = self.handler.handle_request(&protocol_msg).await
+                            {
                                 let response_json =
                                     serde_json::to_string(&response).context(SerializationSnafu)?;
                                 write

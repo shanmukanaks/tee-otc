@@ -25,3 +25,4 @@ bitcoincore-rpc-async = {workspace = true}
 bitcoin = {workspace = true}
 common = {workspace = true}
 otc-models = {workspace = true}
+uuid = {workspace= true}

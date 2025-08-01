@@ -2,7 +2,8 @@ use async_trait::async_trait;
 use dashmap::DashMap;
 use otc_models::{ChainType, Currency};
 use snafu::Snafu;
-use std::sync::Arc;
+use std::{collections::HashMap, sync::Arc};
+use tokio::sync::oneshot;
 
 #[derive(Debug, Snafu)]
 pub enum WalletError {
@@ -26,6 +27,26 @@ pub enum WalletError {
 
     #[snafu(display("Failed to get erc20 balance: {}", context))]
     GetErc20BalanceFailed { context: String },
+
+    #[snafu(display("Channel closed"))]
+    ChannelClosed,
+
+    #[snafu(display("Failed to enqueue transaction request"))]
+    EnqueueFailed,
+
+    #[snafu(display("Failed to send transaction execution result"))]
+    SendResultFailed,
+
+    #[snafu(display("Unknown simulation error: {}", message))]
+    UnknownSimulationError { message: String },
+
+    #[snafu(display("Failed to get block number: {}", source))]
+    GetBlockNumber {
+        source: alloy::transports::RpcError<alloy::transports::TransportErrorKind>,
+    },
+
+    #[snafu(display("Failed to receive transaction result: {}", source))]
+    ReceiveResult { source: oneshot::error::RecvError },
 }
 
 pub type Result<T, E = WalletError> = std::result::Result<T, E>;
@@ -47,30 +68,30 @@ pub trait Wallet: Send + Sync {
 
 #[derive(Clone)]
 pub struct WalletManager {
-    wallets: Arc<DashMap<ChainType, Arc<dyn Wallet>>>,
+    wallets: HashMap<ChainType, Arc<dyn Wallet>>,
 }
 
 impl WalletManager {
     #[must_use]
     pub fn new() -> Self {
         Self {
-            wallets: Arc::new(DashMap::new()),
+            wallets: HashMap::new(),
         }
     }
 
     /// Register a wallet implementation for a specific chain type
-    pub fn register(&self, chain_type: ChainType, wallet: Arc<dyn Wallet>) {
+    pub fn register(&mut self, chain_type: ChainType, wallet: Arc<dyn Wallet>) {
         self.wallets.insert(chain_type, wallet);
     }
 
     /// Remove a wallet implementation for a specific chain type
-    pub fn remove(&self, chain_type: ChainType) -> Option<Arc<dyn Wallet>> {
-        self.wallets.remove(&chain_type).map(|(_, wallet)| wallet)
+    pub fn remove(&mut self, chain_type: ChainType) -> Option<Arc<dyn Wallet>> {
+        self.wallets.remove(&chain_type)
     }
 
     /// Get a wallet implementation for a specific chain type
     pub fn get(&self, chain_type: ChainType) -> Option<Arc<dyn Wallet>> {
-        self.wallets.get(&chain_type).map(|entry| entry.clone())
+        self.wallets.get(&chain_type).cloned()
     }
 
     /// Check if a wallet is registered for a specific chain type
@@ -82,7 +103,7 @@ impl WalletManager {
     /// Get all registered chain types
     #[must_use]
     pub fn registered_chains(&self) -> Vec<ChainType> {
-        self.wallets.iter().map(|entry| *entry.key()).collect()
+        self.wallets.keys().cloned().collect()
     }
 }
 
@@ -120,7 +141,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_wallet_registration() {
-        let manager = WalletManager::new();
+        let mut manager = WalletManager::new();
         let mock_wallet = Arc::new(MockWallet {
             can_fill_response: true,
         });
@@ -157,7 +178,7 @@ mod tests {
 
     #[test]
     fn test_registered_chains() {
-        let manager = WalletManager::new();
+        let mut manager = WalletManager::new();
         let mock_wallet = Arc::new(MockWallet {
             can_fill_response: true,
         });

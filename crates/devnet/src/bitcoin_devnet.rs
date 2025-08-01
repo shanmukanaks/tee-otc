@@ -419,8 +419,8 @@ impl BitcoinDevnet {
     /// Convenience method for handing out some BTC to a given address.
     pub async fn deal_bitcoin(
         &self,
-        address: BitcoinAddress,
-        amount: Amount,
+        address: &BitcoinAddress,
+        amount: &Amount,
     ) -> Result<GetRawTransactionVerbose> {
         let deal_start = Instant::now();
         info!("[Bitcoin] Dealing {} BTC to {}", amount.to_btc(), address);
@@ -436,7 +436,7 @@ impl BitcoinDevnet {
 
         let send_result = self
             .rpc_client
-            .send_to_address(&address, amount)
+            .send_to_address(address, *amount)
             .await
             .map_err(|e| eyre::eyre!("Failed to send to address: {}", e))?;
         let txid = Txid::from_str(&send_result.0)

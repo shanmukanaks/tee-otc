@@ -1,15 +1,10 @@
 use bitcoin::{
-    address::NetworkChecked, 
+    address::NetworkChecked,
     bip32::{DerivationPath, Xpriv},
     key::{CompressedPublicKey, PrivateKey, PublicKey},
-    secp256k1::{SecretKey, Secp256k1},
     script::ScriptBuf,
-    Address, 
-    Amount, 
-    Network,
-    OutPoint, 
-    Transaction, 
-    Weight
+    secp256k1::{Secp256k1, SecretKey},
+    Address, Amount, Network, OutPoint, Transaction, Weight,
 };
 use bitcoin_coin_selection::WeightedUtxo;
 use snafu::prelude::*;
@@ -49,32 +44,32 @@ impl InputUtxo {
 pub trait BitcoinSigner {
     /// The error type returned by signing operations
     type Error: std::error::Error + Send + Sync + 'static;
-    
+
     /// Sign a transaction using the wallet's private key
     fn sign_transaction(
         &self,
         tx: &Transaction,
         utxo_inputs: &[InputUtxo],
     ) -> Result<Transaction, Self::Error>;
-    
+
     /// Get the script pubkey for change outputs
     fn get_script_pubkey(&self) -> ScriptBuf;
-    
+
     /// Get the wallet's address
     fn get_address(&self) -> bitcoin::Address<NetworkChecked>;
 }
 
-
 #[derive(Debug, Clone)]
 pub struct P2WPKHBitcoinWallet {
     pub secret_key: SecretKey,
+    pub private_key: PrivateKey,
     pub public_key: String,
     pub address: Address<NetworkChecked>,
 }
 
 impl BitcoinSigner for P2WPKHBitcoinWallet {
     type Error = BitcoinWalletError;
-    
+
     fn sign_transaction(
         &self,
         tx: &Transaction,
@@ -99,34 +94,38 @@ impl BitcoinSigner for P2WPKHBitcoinWallet {
 pub enum BitcoinWalletError {
     #[snafu(display("Invalid mnemonic phrase"))]
     InvalidMnemonic,
-    
+
     #[snafu(display("Invalid derivation path"))]
     InvalidDerivationPath,
-    
+
     #[snafu(display("Key derivation failed"))]
     KeyDerivationFailed,
-    
+
     #[snafu(display("Transaction signing failed: {message}"))]
     SigningFailed { message: String },
-    
+
     #[snafu(display("Invalid public key"))]
     InvalidPublicKey,
 }
 
 impl P2WPKHBitcoinWallet {
-    #[must_use] pub fn new(
+    #[must_use]
+    pub fn new(
         secret_key: SecretKey,
+        private_key: PrivateKey,
         public_key: String,
         address: Address<NetworkChecked>,
     ) -> Self {
         Self {
             secret_key,
+            private_key,
             public_key,
             address,
         }
     }
 
-    #[must_use] pub fn from_secret_bytes(secret_key: &[u8; 32], network: Network) -> Self {
+    #[must_use]
+    pub fn from_secret_bytes(secret_key: &[u8; 32], network: Network) -> Self {
         let secret_key = SecretKey::from_slice(secret_key).unwrap();
         let secp = Secp256k1::new();
         let pk = PrivateKey::new(secret_key, network);
@@ -136,7 +135,7 @@ impl P2WPKHBitcoinWallet {
             &CompressedPublicKey::from_private_key(&secp, &pk).unwrap(),
             network,
         );
-        Self::new(secret_key, public_key.to_string(), address)
+        Self::new(secret_key, pk, public_key.to_string(), address)
     }
 
     /// Creates a wallet from a BIP39 mnemonic phrase.
@@ -185,12 +184,17 @@ impl P2WPKHBitcoinWallet {
             network,
         );
 
-        Ok(Self::new(secret_key, public_key.to_string(), address))
+        Ok(Self::new(
+            secret_key,
+            private_key,
+            public_key.to_string(),
+            address,
+        ))
     }
 
-    #[must_use] pub fn get_p2wpkh_script(&self) -> ScriptBuf {
-        let public_key = PublicKey::from_str(&self.public_key)
-            .expect("Invalid public key");
+    #[must_use]
+    pub fn get_p2wpkh_script(&self) -> ScriptBuf {
+        let public_key = PublicKey::from_str(&self.public_key).expect("Invalid public key");
         ScriptBuf::new_p2wpkh(
             &public_key
                 .wpubkey_hash()

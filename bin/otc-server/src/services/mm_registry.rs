@@ -1,5 +1,6 @@
 use dashmap::DashMap;
 use otc_mm_protocol::{MMRequest, ProtocolMessage};
+use otc_models::Currency;
 use snafu::Snafu;
 use std::sync::Arc;
 use tokio::sync::{mpsc, oneshot};
@@ -24,9 +25,7 @@ pub enum MMRegistryError {
     InvalidQuoteId { quote_id: String },
 
     #[snafu(display("Failed to receive validation response: {}", source))]
-    ResponseReceiveError {
-        source: oneshot::error::RecvError,
-    },
+    ResponseReceiveError { source: oneshot::error::RecvError },
 }
 
 type Result<T, E = MMRegistryError> = std::result::Result<T, E>;
@@ -45,7 +44,8 @@ pub struct MMRegistry {
 }
 
 impl MMRegistry {
-    #[must_use] pub fn new(validation_timeout: Duration) -> Self {
+    #[must_use]
+    pub fn new(validation_timeout: Duration) -> Self {
         Self {
             connections: Arc::new(DashMap::new()),
             pending_validations: Arc::new(DashMap::new()),
@@ -64,13 +64,13 @@ impl MMRegistry {
             protocol_version = %protocol_version,
             "Registering market maker connection"
         );
-        
+
         let connection = MarketMakerConnection {
             id: market_maker_id,
             sender,
             protocol_version,
         };
-        
+
         self.connections.insert(market_maker_id, connection);
     }
 
@@ -79,12 +79,19 @@ impl MMRegistry {
         self.connections.remove(&market_maker_id);
     }
 
-    #[must_use] pub fn is_connected(&self, market_maker_id: Uuid) -> bool {
+    #[must_use]
+    pub fn is_connected(&self, market_maker_id: Uuid) -> bool {
         self.connections.contains_key(&market_maker_id)
     }
 
-
-    pub async fn notify_user_deposit(&self, market_maker_id: &Uuid, swap_id: &Uuid, quote_id: &Uuid, user_deposit_address: &str, user_tx_hash: &str) {
+    pub async fn notify_user_deposit(
+        &self,
+        market_maker_id: &Uuid,
+        swap_id: &Uuid,
+        quote_id: &Uuid,
+        user_deposit_address: &str,
+        user_tx_hash: &str,
+    ) {
         if let Some(conn) = self.connections.get(market_maker_id) {
             let request = ProtocolMessage {
                 version: conn.protocol_version.clone(),
@@ -103,17 +110,15 @@ impl MMRegistry {
             }
         }
     }
-    
+
     pub async fn notify_user_deposit_confirmed(
-        &self, 
-        market_maker_id: &Uuid, 
-        swap_id: &Uuid, 
+        &self,
+        market_maker_id: &Uuid,
+        swap_id: &Uuid,
         quote_id: &Uuid,
         user_destination_address: &str,
         mm_nonce: [u8; 16],
-        expected_amount: alloy::primitives::U256,
-        expected_chain: &str,
-        expected_token: &str,
+        expected_currency: &Currency,
     ) {
         if let Some(conn) = self.connections.get(market_maker_id) {
             let request = ProtocolMessage {
@@ -125,20 +130,18 @@ impl MMRegistry {
                     quote_id: *quote_id,
                     user_destination_address: user_destination_address.to_string(),
                     mm_nonce,
-                    expected_amount,
-                    expected_chain: expected_chain.to_string(),
-                    expected_token: expected_token.to_string(),
+                    expected_currency: expected_currency.clone(),
                     timestamp: chrono::Utc::now(),
                 },
             };
-            
+
             info!(
                 market_maker_id = %market_maker_id,
                 swap_id = %swap_id,
                 user_destination_address = %user_destination_address,
                 "Notifying MM that user deposit is confirmed - MM should send payment with nonce"
             );
-            
+
             if let Err(e) = conn.sender.send(request).await {
                 error!(market_maker_id = %market_maker_id, error = %e, "Failed to send user deposit confirmed notification");
             }
@@ -149,8 +152,14 @@ impl MMRegistry {
             );
         }
     }
-    
-    pub async fn notify_swap_complete(&self, market_maker_id: &Uuid, swap_id: &Uuid, user_deposit_private_key: &str, mm_tx_hash: &str) {
+
+    pub async fn notify_swap_complete(
+        &self,
+        market_maker_id: &Uuid,
+        swap_id: &Uuid,
+        user_deposit_private_key: &str,
+        mm_tx_hash: &str,
+    ) {
         if let Some(conn) = self.connections.get(market_maker_id) {
             let request = ProtocolMessage {
                 version: conn.protocol_version.clone(),
@@ -183,7 +192,9 @@ impl MMRegistry {
             "Validating quote with market maker"
         );
 
-        let mm_connection = if let Some(conn) = self.connections.get(&market_maker_id) { conn } else {
+        let mm_connection = if let Some(conn) = self.connections.get(&market_maker_id) {
+            conn
+        } else {
             warn!(
                 market_maker_id = %market_maker_id,
                 "Market maker not connected"
@@ -193,7 +204,6 @@ impl MMRegistry {
             }));
             return;
         };
-
 
         let request = ProtocolMessage {
             version: mm_connection.protocol_version.clone(),
@@ -208,7 +218,8 @@ impl MMRegistry {
         };
 
         // Store the response channel before sending the request
-        self.pending_validations.insert(quote_id.clone(), response_tx);
+        self.pending_validations
+            .insert(quote_id.clone(), response_tx);
 
         // Send the validation request
         if let Err(e) = mm_connection.sender.send(request).await {
@@ -249,11 +260,13 @@ impl MMRegistry {
         }
     }
 
-    #[must_use] pub fn get_connection_count(&self) -> usize {
+    #[must_use]
+    pub fn get_connection_count(&self) -> usize {
         self.connections.len()
     }
 
-    #[must_use] pub fn get_connected_market_makers(&self) -> Vec<Uuid> {
+    #[must_use]
+    pub fn get_connected_market_makers(&self) -> Vec<Uuid> {
         self.connections
             .iter()
             .map(|entry| entry.key().clone())
@@ -270,12 +283,12 @@ mod tests {
         let registry = MMRegistry::new(Duration::from_secs(5));
         let (tx, _rx) = mpsc::channel(10);
         let mm_id = Uuid::new_v4();
-        
+
         // Register a market maker
         registry.register(mm_id, tx, "1.0.0".to_string());
         assert!(registry.is_connected(mm_id));
         assert_eq!(registry.get_connection_count(), 1);
-        
+
         // Unregister
         registry.unregister(mm_id);
         assert!(!registry.is_connected(mm_id));
@@ -288,9 +301,16 @@ mod tests {
         let (response_tx, response_rx) = oneshot::channel();
         let unknown_mm_id = Uuid::new_v4();
 
-        
-        let () = registry.validate_quote(&unknown_mm_id, &Uuid::new_v4(), &[0u8; 32], "0x123", response_tx).await;
-        
+        let () = registry
+            .validate_quote(
+                &unknown_mm_id,
+                &Uuid::new_v4(),
+                &[0u8; 32],
+                "0x123",
+                response_tx,
+            )
+            .await;
+
         let result = response_rx.await.unwrap();
         assert!(matches!(
             result,

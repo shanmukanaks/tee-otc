@@ -1,8 +1,21 @@
 use std::str::FromStr;
 
-use alloy::{network::EthereumWallet, providers::{fillers::{BlobGasFiller, ChainIdFiller, FillProvider, GasFiller, JoinFill, NonceFiller, WalletFiller}, Identity, ProviderBuilder, RootProvider, WsConnect}, pubsub::{ConnectionHandle, PubSubConnect}, rpc::client::ClientBuilder, signers::local::LocalSigner, transports::{impl_future, TransportResult}};
+use alloy::{
+    network::EthereumWallet,
+    providers::{
+        fillers::{
+            BlobGasFiller, ChainIdFiller, FillProvider, GasFiller, JoinFill, NonceFiller,
+            WalletFiller,
+        },
+        Identity, ProviderBuilder, RootProvider, WsConnect,
+    },
+    pubsub::{ConnectionHandle, PubSubConnect},
+    rpc::client::ClientBuilder,
+    signers::local::LocalSigner,
+    transports::{impl_future, TransportResult},
+};
 use backoff::exponential::ExponentialBackoff;
-use snafu::{ResultExt, Whatever};
+use snafu::{ResultExt, Snafu, Whatever};
 
 #[derive(Clone, Debug)]
 pub struct RetryWsConnect(WsConnect);
@@ -36,22 +49,48 @@ pub type WebsocketWalletProvider = FillProvider<
     RootProvider,
 >;
 
+#[derive(Debug, Snafu)]
+pub enum ProviderError {
+    #[snafu(display("Failed to create client: {}", source))]
+    Client {
+        source: Box<dyn std::error::Error + Send + Sync>,
+    },
+
+    #[snafu(display("Failed to create local signer: {}", source))]
+    LocalSigner {
+        source: Box<dyn std::error::Error + Send + Sync>,
+    },
+}
+
+impl From<alloy::transports::RpcError<alloy::transports::TransportErrorKind>> for ProviderError {
+    fn from(error: alloy::transports::RpcError<alloy::transports::TransportErrorKind>) -> Self {
+        ProviderError::Client {
+            source: Box::new(error),
+        }
+    }
+}
+
+impl From<alloy::signers::local::LocalSignerError> for ProviderError {
+    fn from(error: alloy::signers::local::LocalSignerError) -> Self {
+        ProviderError::LocalSigner {
+            source: Box::new(error),
+        }
+    }
+}
 
 /// Creates a provider that is both a websocket provider and a wallet provider.
 /// note NOT type erased so we can access the wallet methods of the provider
 pub async fn create_websocket_wallet_provider(
     evm_rpc_websocket_url: &str,
     private_key: [u8; 32],
-) -> Result<WebsocketWalletProvider, Whatever> {
+) -> Result<WebsocketWalletProvider, ProviderError> {
     let ws = RetryWsConnect(WsConnect::new(evm_rpc_websocket_url));
-    let client = ClientBuilder::default()
-        .pubsub(ws)
-        .await.whatever_context("Failed to create client")?;
+    let client = ClientBuilder::default().pubsub(ws).await?;
 
     let provider = ProviderBuilder::new()
-        .wallet(EthereumWallet::new(
-            LocalSigner::from_str(&alloy::hex::encode(private_key)).whatever_context("Failed to create local signer")?
-        ))
+        .wallet(EthereumWallet::new(LocalSigner::from_str(
+            &alloy::hex::encode(private_key),
+        )?))
         .connect_client(client);
 
     Ok(provider)

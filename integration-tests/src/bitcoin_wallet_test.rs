@@ -45,8 +45,8 @@ async fn test_bitcoin_wallet_basic_operations(
     devnet
         .bitcoin
         .deal_bitcoin(
-            market_maker_account.bitcoin_wallet.address,
-            bitcoin::Amount::from_sat(100_000_000),
+            &market_maker_account.bitcoin_wallet.address,
+            &bitcoin::Amount::from_sat(100_000_000),
         )
         .await
         .unwrap();

@@ -5,6 +5,7 @@ use std::sync::Arc;
 use alloy::{
     network::TransactionBuilder,
     primitives::{Address, U256},
+    providers::Provider,
     rpc::types::TransactionRequest,
 };
 use async_trait::async_trait;
@@ -27,7 +28,7 @@ impl EVMWallet {
         provider: Arc<WebsocketWalletProvider>,
         debug_rpc_url: String,
         confirmations: u64,
-        join_set: &mut JoinSet<transaction_broadcaster::Result<()>>,
+        join_set: &mut JoinSet<crate::Result<()>>,
     ) -> Self {
         let tx_broadcaster = transaction_broadcaster::EVMTransactionBroadcaster::new(
             provider.clone(),
@@ -80,7 +81,7 @@ impl Wallet for EVMWallet {
         if ensure_valid_currency(currency).is_err() {
             return Ok(false);
         }
-        
+
         let token_address = match &currency.token {
             TokenIdentifier::Native => return Ok(false), // native tokens are not supported for now
             TokenIdentifier::Address(address) => {
@@ -92,8 +93,7 @@ impl Wallet for EVMWallet {
             }
         };
         let balance =
-            get_erc20_balance(&self.provider, &token_address, &self.tx_broadcaster.sender)
-                .await?;
+            get_erc20_balance(&self.provider, &token_address, &self.tx_broadcaster.sender).await?;
         let required_balance = balance_with_buffer(currency.amount);
         Ok(balance > required_balance)
     }

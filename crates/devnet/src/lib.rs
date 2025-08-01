@@ -626,8 +626,8 @@ impl RiftDevnetBuilder {
         info!("[Interactive Setup] Funding market maker with Bitcoin...");
         bitcoin_devnet
             .deal_bitcoin(
-                market_maker_account.bitcoin_wallet.address.clone(),
-                bitcoin::Amount::from_btc(100.0).unwrap(),
+                &market_maker_account.bitcoin_wallet.address,
+                &bitcoin::Amount::from_btc(100.0).unwrap(),
             )
             .await
             .map_err(|e| {

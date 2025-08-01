@@ -54,13 +54,13 @@ async fn test_evm_wallet_nonce_error_retry(
     let provider = Arc::new(
         ProviderBuilder::new()
             .wallet(wallet)
-            .on_ws(WsConnect::new(ws_url_string))
+            .connect_ws(WsConnect::new(ws_url_string))
             .await
             .unwrap(),
     );
 
     // Use the cbBTC token that's already deployed on devnet
-    let test_token = devnet.ethereum.cbbtc_contract.address().clone();
+    let test_token = *devnet.ethereum.cbbtc_contract.address();
 
     // Fund the market maker with cbBTC tokens
     devnet
@@ -376,7 +376,11 @@ async fn test_evm_wallet_error_handling(
 
     let result = evm_wallet.can_fill(&btc_currency).await;
     info!("result: {:?}", result);
-    assert_eq!(result.unwrap(), false, "Should return false for unsupported currency");
+    assert_eq!(
+        result.unwrap(),
+        false,
+        "Should return false for unsupported currency"
+    );
 
     // Clean up
     join_set.abort_all();

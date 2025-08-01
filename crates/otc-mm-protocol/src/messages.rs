@@ -1,5 +1,6 @@
 use alloy::primitives::U256;
 use chrono::{DateTime, Utc};
+use otc_models::Currency;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -23,7 +24,7 @@ pub enum MMRequest {
         user_destination_address: String,
         timestamp: DateTime<Utc>,
     },
-    
+
     /// Notify MM that user has deposited and provide deposit address
     UserDeposited {
         request_id: Uuid,
@@ -35,7 +36,7 @@ pub enum MMRequest {
         user_tx_hash: String,
         timestamp: DateTime<Utc>,
     },
-    
+
     /// Notify MM that user's deposit is confirmed and MM should send payment
     UserDepositConfirmed {
         request_id: Uuid,
@@ -46,12 +47,10 @@ pub enum MMRequest {
         /// The nonce MM must embed in their transaction
         mm_nonce: [u8; 16],
         /// Expected payment details
-        expected_amount: U256,
-        expected_chain: String,
-        expected_token: String,
+        expected_currency: Currency,
         timestamp: DateTime<Utc>,
     },
-    
+
     /// Notify MM that swap is complete and provide user's private key
     SwapComplete {
         request_id: Uuid,
@@ -62,7 +61,7 @@ pub enum MMRequest {
         user_withdrawal_tx: String,
         timestamp: DateTime<Utc>,
     },
-    
+
     /// Request MM status/health check
     Ping {
         request_id: Uuid,
@@ -84,7 +83,7 @@ pub enum MMResponse {
         rejection_reason: Option<String>,
         timestamp: DateTime<Utc>,
     },
-    
+
     /// Response to `UserDeposited` - MM has initiated deposit
     DepositInitiated {
         request_id: Uuid,
@@ -95,14 +94,14 @@ pub enum MMResponse {
         amount_sent: U256,
         timestamp: DateTime<Utc>,
     },
-    
+
     /// Acknowledgment of `SwapComplete`
     SwapCompleteAck {
         request_id: Uuid,
         swap_id: Uuid,
         timestamp: DateTime<Utc>,
     },
-    
+
     /// Response to Ping
     Pong {
         request_id: Uuid,
@@ -112,7 +111,7 @@ pub enum MMResponse {
         version: String,
         timestamp: DateTime<Utc>,
     },
-    
+
     /// Error response for any request
     Error {
         request_id: Uuid,

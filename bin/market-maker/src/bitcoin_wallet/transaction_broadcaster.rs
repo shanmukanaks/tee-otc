@@ -64,7 +64,7 @@ impl BitcoinTransactionBroadcaster {
         connection: Arc<Mutex<bdk_wallet::rusqlite::Connection>>,
         esplora_client: Arc<esplora_client::AsyncClient>,
         network: bitcoin::Network,
-        join_set: &mut JoinSet<Result<()>>,
+        join_set: &mut JoinSet<crate::Result<()>>,
     ) -> Self {
         let (request_tx, mut request_rx) = mpsc::unbounded_channel::<TransactionRequest>();
         let last_sync = Arc::new(RwLock::new(Instant::now() - SYNC_INTERVAL));

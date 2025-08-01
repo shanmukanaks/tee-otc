@@ -1,7 +1,7 @@
 use crate::strategy::ValidationStrategy;
 use crate::{config::Config, wallet::WalletManager};
 use chrono::Utc;
-use otc_mm_protocol::{MMRequest, MMResponse, MMStatus, ProtocolMessage};
+use otc_mm_protocol::{MMErrorCode, MMRequest, MMResponse, MMStatus, ProtocolMessage};
 use tracing::{info, warn};
 
 pub struct MessageHandler {
@@ -20,7 +20,7 @@ impl MessageHandler {
         }
     }
 
-    pub fn handle_request(
+    pub async fn handle_request(
         &self,
         msg: &ProtocolMessage<MMRequest>,
     ) -> Option<ProtocolMessage<MMResponse>> {
@@ -94,52 +94,57 @@ impl MessageHandler {
                 quote_id,
                 user_destination_address,
                 mm_nonce,
-                expected_amount,
-                expected_chain,
-                expected_token,
+                expected_currency,
                 ..
             } => {
                 info!(
-                    "User deposit confirmed for swap {}: MM should send {} {} on {} to {}",
-                    swap_id,
-                    expected_amount,
-                    expected_token,
-                    expected_chain,
-                    user_destination_address
-                );
-                info!("Quote ID: {}", quote_id);
-                info!("MM nonce to embed: {:?}", alloy::hex::encode(mm_nonce));
-
-                // TODO: Implement actual payment with embedded nonce
-                warn!(
-                    "TODO: Send {} {} on {} to {} with embedded nonce",
-                    expected_amount, expected_token, expected_chain, user_destination_address
+                    message = "User deposit confirmed for swap {swap_id}: MM should send {expected_currency:?} to {user_destination_address}",
+                    quote_id = quote_id.to_string(),
                 );
 
-                // In a real implementation, we would:
-                // 1. Prepare the transaction to user_destination_address
-                // 2. Embed the mm_nonce in the transaction (method depends on chain)
-                // 3. Send the transaction
-                // 4. Respond with DepositInitiated containing our tx hash
+                // TODO: We should have additional safety checks here to ensure the user's deposit is valid
+                // instead of trusting the TEE
+                let wallet = self.wallet_manager.get(expected_currency.chain);
+                let response: MMResponse = {
+                    if let Some(wallet) = wallet {
+                        let tx_result = wallet
+                            .create_transaction(
+                                expected_currency,
+                                user_destination_address,
+                                Some(*mm_nonce),
+                            )
+                            .await;
 
-                // For now, simulate sending after a short delay
-                if self.config.auto_accept {
-                    let response = MMResponse::DepositInitiated {
-                        request_id: *request_id,
-                        swap_id: *swap_id,
-                        tx_hash: format!("0xmm_tx_{}", alloy::hex::encode(&mm_nonce[..8])), // Simulated tx hash
-                        amount_sent: *expected_amount,
-                        timestamp: Utc::now(),
-                    };
+                        match tx_result {
+                            Ok(txid) => MMResponse::DepositInitiated {
+                                request_id: *request_id,
+                                swap_id: *swap_id,
+                                tx_hash: txid,
+                                amount_sent: expected_currency.amount,
+                                timestamp: Utc::now(),
+                            },
+                            Err(e) => MMResponse::Error {
+                                request_id: *request_id,
+                                error_code: MMErrorCode::InternalError,
+                                message: e.to_string(),
+                                timestamp: Utc::now(),
+                            },
+                        }
+                    } else {
+                        MMResponse::Error {
+                            request_id: *request_id,
+                            error_code: MMErrorCode::UnsupportedChain,
+                            message: "No wallet found for chain".to_string(),
+                            timestamp: Utc::now(),
+                        }
+                    }
+                };
 
-                    Some(ProtocolMessage {
-                        version: msg.version.clone(),
-                        sequence: msg.sequence + 1,
-                        payload: response,
-                    })
-                } else {
-                    None
-                }
+                Some(ProtocolMessage {
+                    version: msg.version.clone(),
+                    sequence: msg.sequence + 1,
+                    payload: response,
+                })
             }
 
             MMRequest::SwapComplete {

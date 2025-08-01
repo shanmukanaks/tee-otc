@@ -89,13 +89,13 @@ pub struct BitcoinWallet {
 
 impl BitcoinWallet {
     pub async fn new(
-        db_path: &str,
+        db_file: &str,
         external_descriptor: &str,
         network: Network,
         esplora_url: &str,
-        join_set: &mut JoinSet<transaction_broadcaster::Result<()>>,
+        join_set: &mut JoinSet<crate::Result<()>>,
     ) -> Result<Self, BitcoinWalletError> {
-        let mut conn = Connection::open(db_path).context(OpenDatabaseSnafu)?;
+        let mut conn = Connection::open(db_file).context(OpenDatabaseSnafu)?;
 
         // Try to load existing wallet
         let load_params = LoadParams::new()
@@ -134,7 +134,7 @@ impl BitcoinWallet {
         let wallet = Arc::new(Mutex::new(wallet));
         let connection = Arc::new(Mutex::new(conn));
         let esplora_client = Arc::new(esplora_client);
-        
+
         let tx_broadcaster = transaction_broadcaster::BitcoinTransactionBroadcaster::new(
             wallet.clone(),
             connection.clone(),
@@ -152,10 +152,10 @@ impl BitcoinWallet {
     async fn check_balance(&self, currency: &Currency) -> Result<bool, BitcoinWalletError> {
         let wallet = self.wallet.lock().await;
         let balance = wallet.balance();
-        
+
         let amount_sats = currency.amount.to::<u64>();
         let required_balance = balance_with_buffer(amount_sats);
-        
+
         Ok(balance.total().to_sat() > required_balance)
     }
 }

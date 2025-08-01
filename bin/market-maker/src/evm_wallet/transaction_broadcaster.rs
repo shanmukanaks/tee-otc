@@ -21,31 +21,6 @@ use tokio::{
 };
 use tracing;
 
-#[derive(Debug, Snafu)]
-pub enum TransactionBroadcasterError {
-    #[snafu(display("Failed to enqueue transaction request"))]
-    EnqueueFailed,
-
-    #[snafu(display("TransactionBroadcaster channel closed"))]
-    ChannelClosed,
-
-    #[snafu(display("Failed to send transaction execution result"))]
-    SendResultFailed,
-
-    #[snafu(display("Unknown simulation error: {}", message))]
-    UnknownSimulationError { message: String },
-
-    #[snafu(display("Failed to get block number: {}", source))]
-    GetBlockNumber {
-        source: alloy::transports::RpcError<alloy::transports::TransportErrorKind>,
-    },
-
-    #[snafu(display("Failed to receive transaction result: {}", source))]
-    ReceiveResult { source: oneshot::error::RecvError },
-}
-
-pub type Result<T, E = TransactionBroadcasterError> = std::result::Result<T, E>;
-
 #[derive(Debug, Clone)]
 pub struct RevertInfo {
     pub error_payload: ErrorPayload,
@@ -146,7 +121,7 @@ impl EVMTransactionBroadcaster {
         wallet_rpc: Arc<WebsocketWalletProvider>,
         debug_rpc_url: String,
         confirmations: u64,
-        join_set: &mut JoinSet<Result<()>>,
+        join_set: &mut JoinSet<crate::Result<()>>,
     ) -> Self {
         // single-consumer channel is important here b/c nonce management is difficult and basically impossible to do concurrently - would love for this to not be true
         let (request_sender, request_receiver) = channel(128);
@@ -183,7 +158,7 @@ impl EVMTransactionBroadcaster {
         &self,
         transaction_request: AlloyTransactionRequest,
         preflight_check: PreflightCheck,
-    ) -> Result<TransactionExecutionResult> {
+    ) -> crate::wallet::Result<TransactionExecutionResult> {
         let (tx, rx) = oneshot::channel();
         let request = Request {
             transaction_request,
@@ -196,11 +171,11 @@ impl EVMTransactionBroadcaster {
         self.request_sender
             .send(request)
             .await
-            .map_err(|_| EnqueueFailedSnafu.build())?;
+            .map_err(|_| crate::wallet::WalletError::EnqueueFailed.into())?;
 
         // If there's an unhandled error, this will just get bubbled
-        let result = rx.await.context(ReceiveResultSnafu)?;
-        Ok(result)
+        rx.await
+            .map_err(|e| crate::wallet::WalletError::ReceiveResult { source: e }.into())
     }
 
     // Transaction broadcast flow:
@@ -226,13 +201,13 @@ impl EVMTransactionBroadcaster {
         mut request_receiver: Receiver<Request>,
         debug_rpc_url: String,
         status_broadcaster: broadcast::Sender<TransactionStatusUpdate>,
-    ) -> Result<()> {
+    ) -> crate::Result<()> {
         let signer_address = wallet_rpc.default_signer_address();
         loop {
             let mut request = match request_receiver.recv().await {
                 Some(req) => req,
                 None => {
-                    return Err(ChannelClosedSnafu.build());
+                    return Err(crate::wallet::WalletError::ChannelClosed.into());
                 }
             };
 
@@ -242,7 +217,7 @@ impl EVMTransactionBroadcaster {
             let block_height = wallet_rpc
                 .get_block_number()
                 .await
-                .context(GetBlockNumberSnafu)?;
+                .map_err(|e| crate::wallet::WalletError::GetBlockNumber { source: e })?;
             let debug_cli_command = format!(
                 "cast call {} --from {} --data {} --trace --block {} --rpc-url {}",
                 transaction_request.to.unwrap().to().unwrap(),
@@ -280,7 +255,7 @@ impl EVMTransactionBroadcaster {
                         request
                             .tx
                             .send(sim_error)
-                            .map_err(|_| SendResultFailedSnafu.build())?;
+                            .map_err(|_| crate::wallet::WalletError::SendResultFailed)?;
                         continue;
                     }
 
@@ -369,7 +344,7 @@ impl EVMTransactionBroadcaster {
             request
                 .tx
                 .send(txn_result)
-                .map_err(|_| SendResultFailedSnafu.build())?;
+                .map_err(|_| crate::wallet::WalletError::SendResultFailed)?;
         }
     }
 }
