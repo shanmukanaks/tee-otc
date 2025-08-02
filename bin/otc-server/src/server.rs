@@ -61,6 +61,7 @@ pub async fn run_server(args: OtcServerArgs) -> Result<()> {
     // Initialize Bitcoin chain
     let bitcoin_chain = BitcoinChain::new(
         &args.bitcoin_rpc_url,
+        args.bitcoin_rpc_auth,
         &args.esplora_http_server_url,
         args.bitcoin_network,
     )
@@ -109,6 +110,7 @@ pub async fn run_server(args: OtcServerArgs) -> Result<()> {
         settings.clone(),
         chain_registry.clone(),
         mm_registry.clone(),
+        args.chain_monitor_interval_seconds,
     ));
 
     info!("Starting swap monitoring service...");

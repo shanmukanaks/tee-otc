@@ -157,10 +157,6 @@ async fn process_transaction(
     // Lock wallet for transaction creation
     let mut wallet_guard = wallet.lock().await;
 
-    let address = wallet_guard.peek_address(KeychainKind::External, 0);
-
-    println!("address: {:?}", address);
-
     // Check balance
     let balance = wallet_guard.balance();
     let amount_sats = currency.amount.to::<u64>();

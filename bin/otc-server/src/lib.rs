@@ -1,7 +1,8 @@
-use std::net::IpAddr;
+use std::{fs, net::IpAddr, path::PathBuf, time::Duration};
 
-use snafu::{prelude::*, Whatever};
+use bitcoincore_rpc_async::Auth;
 use clap::Parser;
+use snafu::{prelude::*, Whatever};
 
 pub mod api;
 pub mod auth;
@@ -14,20 +15,22 @@ pub mod services;
 #[derive(Debug, Snafu)]
 pub enum Error {
     #[snafu(display("Failed to set global subscriber"))]
-    SetGlobalSubscriber { source: tracing::subscriber::SetGlobalDefaultError },
-    
+    SetGlobalSubscriber {
+        source: tracing::subscriber::SetGlobalDefaultError,
+    },
+
     #[snafu(display("Failed to bind server"))]
     ServerBind { source: std::io::Error },
-    
+
     #[snafu(display("Server failed to start"))]
     ServerStart { source: std::io::Error },
-    
+
     #[snafu(display("Failed to connect to database"))]
     DatabaseConnection { source: sqlx::Error },
-    
+
     #[snafu(display("Database query failed"))]
     DatabaseQuery { source: sqlx::Error },
-    
+
     #[snafu(display("Database initialization failed: {}", source))]
     DatabaseInit { source: error::OtcServerError },
 
@@ -50,13 +53,17 @@ pub struct OtcServerArgs {
     /// Host to bind to
     #[arg(short = 'H', long, default_value = "127.0.0.1")]
     pub host: IpAddr,
-    
+
     /// Port to bind to
     #[arg(short, long, default_value = "3000")]
     pub port: u16,
-    
+
     /// Database URL
-    #[arg(long, env = "DATABASE_URL", default_value = "postgres://otc_user:otc_password@localhost:5432/otc_db")]
+    #[arg(
+        long,
+        env = "DATABASE_URL",
+        default_value = "postgres://otc_user:otc_password@localhost:5432/otc_db"
+    )]
     pub database_url: String,
 
     /// Log level
@@ -79,6 +86,10 @@ pub struct OtcServerArgs {
     #[arg(long, env = "BITCOIN_RPC_URL")]
     pub bitcoin_rpc_url: String,
 
+    /// Bitcoin RPC Auth
+    #[arg(long, env = "BITCOIN_RPC_AUTH", default_value = "none", value_parser = parse_auth)]
+    pub bitcoin_rpc_auth: Auth,
+
     /// Electrum HTTP Server URL
     #[arg(long, env = "ELECTRUM_HTTP_SERVER_URL")]
     pub esplora_http_server_url: String,
@@ -88,8 +99,29 @@ pub struct OtcServerArgs {
     pub bitcoin_network: bitcoin::Network,
 
     /// API keys file
-    #[arg(long, env = "WHITELISTED_MM_FILE", default_value = "prod_whitelisted_market_makers.json")]
+    #[arg(
+        long,
+        env = "WHITELISTED_MM_FILE",
+        default_value = "prod_whitelisted_market_makers.json"
+    )]
     pub whitelist_file: String,
+
+    /// Chain monitor interval in seconds
+    #[arg(long, env = "CHAIN_MONITOR_INTERVAL", default_value = "10")]
+    pub chain_monitor_interval_seconds: u64,
+}
+
+fn parse_auth(s: &str) -> Result<Auth, String> {
+    if s.to_lowercase() == "none" {
+        Ok(Auth::None)
+    } else if fs::exists(s).map_err(|e| e.to_string())? {
+        Ok(Auth::CookieFile(PathBuf::from(s)))
+    } else {
+        let mut split = s.splitn(2, ":");
+        let u = split.next().ok_or("Invalid auth string")?;
+        let p = split.next().ok_or("Invalid auth string")?;
+        Ok(Auth::UserPass(u.to_string(), p.to_string()))
+    }
 }
 
 const DEFAULT_HOST: &str = "127.0.0.1";

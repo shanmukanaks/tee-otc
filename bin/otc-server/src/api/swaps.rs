@@ -59,9 +59,6 @@ pub struct SwapResponse {
 
     /// Market maker's deposit information  
     pub mm_deposit: DepositInfoResponse,
-
-    /// Settlement transaction (if completed)
-    pub settlement_tx: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -34,6 +34,7 @@ pub struct SwapMonitoringService {
     settings: Arc<Settings>,
     chain_registry: Arc<ChainRegistry>,
     mm_registry: Arc<mm_registry::MMRegistry>,
+    chain_monitor_interval_seconds: u64,
 }
 
 impl SwapMonitoringService {
@@ -43,12 +44,14 @@ impl SwapMonitoringService {
         settings: Arc<Settings>,
         chain_registry: Arc<ChainRegistry>,
         mm_registry: Arc<mm_registry::MMRegistry>,
+        chain_monitor_interval_seconds: u64,
     ) -> Self {
         Self {
             db,
             settings,
             chain_registry,
             mm_registry,
+            chain_monitor_interval_seconds,
         }
     }
 
@@ -59,17 +62,12 @@ impl SwapMonitoringService {
         // Check every 12 seconds
         // interval is based on the shortest confirmation time of all chains
         let chains = self.chain_registry.supported_chains();
-        let shortest_confirmation_time = chains
-            .iter()
-            .filter_map(|chain| self.chain_registry.get(chain))
-            .map(|chain_ops| chain_ops.estimated_block_time())
-            .min()
-            .unwrap_or(Duration::from_secs(12));
+        let interval = Duration::from_secs(self.chain_monitor_interval_seconds);
         info!(
             "Starting swap monitoring service with interval: {:?}",
-            shortest_confirmation_time
+            interval
         );
-        let mut interval = time::interval(shortest_confirmation_time);
+        let mut interval = time::interval(interval);
 
         loop {
             interval.tick().await;
@@ -103,6 +101,11 @@ impl SwapMonitoringService {
         if swap.failure_at.is_some() {
             return self.handle_failure(swap).await;
         }
+
+        info!(
+            "Monitoring swap {} status: {:?}, user deposit status: {:?}",
+            swap.id, swap.status, swap.user_deposit_status
+        );
 
         match swap.status {
             SwapStatus::WaitingUserDepositInitiated => {
@@ -148,11 +151,15 @@ impl SwapMonitoringService {
             .derive_wallet(&self.settings.master_key_bytes(), &swap.user_deposit_salt)
             .context(ChainOperationSnafu)?;
 
+        info!("User deposit wallet: {:?}", user_wallet.address);
+
         // Check for deposit from the user's wallet
         let deposit_info = chain_ops
             .search_for_transfer(&user_wallet.address, &quote.from, None, None)
             .await
             .context(ChainOperationSnafu)?;
+
+        info!("Deposit info: {:?}", deposit_info);
 
         if let Some(deposit) = deposit_info {
             info!(

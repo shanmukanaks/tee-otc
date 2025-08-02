@@ -1,4 +1,4 @@
-use crate::api::swaps::{CreateSwapRequest, CreateSwapResponse, SwapResponse, DepositInfoResponse};
+use crate::api::swaps::{CreateSwapRequest, CreateSwapResponse, DepositInfoResponse, SwapResponse};
 use crate::config::Settings;
 use crate::db::Database;
 use crate::error::OtcServerError;
@@ -13,34 +13,31 @@ use tokio::time::{timeout, Duration};
 use tracing::{info, warn};
 use uuid::Uuid;
 
-
 const MARKET_MAKER_VALIDATION_TIMEOUT: Duration = Duration::from_secs(5);
-
 
 #[derive(Debug, Snafu)]
 pub enum SwapError {
     #[snafu(display("Quote not found: {}", quote_id))]
     QuoteNotFound { quote_id: Uuid },
-    
+
     #[snafu(display("Quote has expired"))]
     QuoteExpired,
-    
-    
+
     #[snafu(display("Market maker rejected the quote"))]
     MarketMakerRejected,
-    
+
     #[snafu(display("Market maker not connected: {}", market_maker_id))]
     MarketMakerNotConnected { market_maker_id: String },
-    
+
     #[snafu(display("Market maker validation timeout"))]
     MarketMakerValidationTimeout,
-    
+
     #[snafu(display("Database error: {}", source))]
     Database { source: OtcServerError },
-    
+
     #[snafu(display("Chain not supported: {:?}", chain))]
     ChainNotSupported { chain: otc_models::ChainType },
-    
+
     #[snafu(display("Failed to derive wallet: {}", source))]
     WalletDerivation { source: otc_chains::Error },
 }
@@ -48,8 +45,8 @@ pub enum SwapError {
 impl From<OtcServerError> for SwapError {
     fn from(err: OtcServerError) -> Self {
         match err {
-            OtcServerError::NotFound => SwapError::QuoteNotFound { 
-                quote_id: Uuid::nil() // We don't have the ID here
+            OtcServerError::NotFound => SwapError::QuoteNotFound {
+                quote_id: Uuid::nil(), // We don't have the ID here
             },
             _ => SwapError::Database { source: err },
         }
@@ -67,9 +64,10 @@ pub struct SwapManager {
 }
 
 impl SwapManager {
-    #[must_use] pub fn new(
-        db: Database, 
-        settings: Arc<Settings>, 
+    #[must_use]
+    pub fn new(
+        db: Database,
+        settings: Arc<Settings>,
         chain_registry: Arc<ChainRegistry>,
         mm_registry: Arc<MMRegistry>,
     ) -> Self {
@@ -80,9 +78,9 @@ impl SwapManager {
             mm_registry,
         }
     }
-    
+
     /// Create a new swap from a quote
-    /// 
+    ///
     /// This will:
     /// 1. Validate the quote hasn't expired
     /// 2. Validate the market maker matches
@@ -96,33 +94,38 @@ impl SwapManager {
         if quote.expires_at < Utc::now() {
             return Err(SwapError::QuoteExpired);
         }
-        
+
         // 2. Ask market maker if they'll fill this quote
-        info!("Validating quote {} with market maker {}", quote.id, quote.market_maker_id);
-        
+        info!(
+            "Validating quote {} with market maker {}",
+            quote.id, quote.market_maker_id
+        );
+
         // Check if MM is connected
         if !self.mm_registry.is_connected(quote.market_maker_id) {
-            warn!("Market maker {} not connected, rejecting swap", quote.market_maker_id);
+            warn!(
+                "Market maker {} not connected, rejecting swap",
+                quote.market_maker_id
+            );
             return Err(SwapError::MarketMakerNotConnected {
                 market_maker_id: quote.market_maker_id.to_string(),
             });
         }
-        
+
         // 3. Send validation request with timeout
         let (response_tx, response_rx) = oneshot::channel();
-        self.mm_registry.validate_quote(
-            &quote.market_maker_id,
-            &quote.id,
-            &quote.hash(),
-            &request.user_destination_address,
-            response_tx,
-        ).await;
-        
+        self.mm_registry
+            .validate_quote(
+                &quote.market_maker_id,
+                &quote.id,
+                &quote.hash(),
+                &request.user_destination_address,
+                response_tx,
+            )
+            .await;
+
         // Wait for response with timeout
-        let validation_result = match timeout(
-            MARKET_MAKER_VALIDATION_TIMEOUT,
-            response_rx
-        ).await {
+        let validation_result = match timeout(MARKET_MAKER_VALIDATION_TIMEOUT, response_rx).await {
             Ok(Ok(result)) => result,
             Ok(Err(_)) => {
                 warn!("Failed to receive validation response from market maker");
@@ -133,7 +136,7 @@ impl SwapManager {
                 return Err(SwapError::MarketMakerValidationTimeout);
             }
         };
-        
+
         // Handle the validation result
         match validation_result {
             Ok(accepted) => {
@@ -148,7 +151,7 @@ impl SwapManager {
                 return Err(SwapError::MarketMakerValidationTimeout);
             }
         }
-        
+
         // 5. Generate random salts for wallet derivation
         let swap_id = Uuid::new_v4();
         let mut user_deposit_salt = [0u8; 32];
@@ -156,14 +159,18 @@ impl SwapManager {
         getrandom::getrandom(&mut user_deposit_salt).expect("Failed to generate random salt");
         getrandom::getrandom(&mut mm_nonce).expect("Failed to generate random nonce");
         // 7. Derive user deposit address for response
-        let user_chain = self.chain_registry
-        .get(&quote.from.chain)
-        .ok_or(SwapError::ChainNotSupported { chain: quote.from.chain })?;
-    
+        let user_chain =
+            self.chain_registry
+                .get(&quote.from.chain)
+                .ok_or(SwapError::ChainNotSupported {
+                    chain: quote.from.chain,
+                })?;
+
         let user_deposit_address = &user_chain
-        .derive_wallet(&self.settings.master_key_bytes(), &user_deposit_salt)
-        .map_err(|e| SwapError::WalletDerivation { source: e })?.address;
-        
+            .derive_wallet(&self.settings.master_key_bytes(), &user_deposit_salt)
+            .map_err(|e| SwapError::WalletDerivation { source: e })?
+            .address;
+
         // 6. Create swap record
         let now = Utc::now();
         let swap = Swap {
@@ -187,24 +194,23 @@ impl SwapManager {
             updated_at: now,
         };
 
-        
         // Save swap to database
-        self.db.swaps()
-            .create(&swap)
-            .await
-            .context(DatabaseSnafu)?;
-        
+        self.db.swaps().create(&swap).await.context(DatabaseSnafu)?;
+
         info!("Created swap {} for quote {}", swap_id, quote.id);
-        
+
         // 7. Derive user deposit address for response
-        let user_chain = self.chain_registry
-            .get(&quote.from.chain)
-            .ok_or(SwapError::ChainNotSupported { chain: quote.from.chain })?;
-        
+        let user_chain =
+            self.chain_registry
+                .get(&quote.from.chain)
+                .ok_or(SwapError::ChainNotSupported {
+                    chain: quote.from.chain,
+                })?;
+
         let user_wallet = user_chain
             .derive_wallet(&self.settings.master_key_bytes(), &user_deposit_salt)
             .map_err(|e| SwapError::WalletDerivation { source: e })?;
-        
+
         // 8. Return response
         Ok(CreateSwapResponse {
             swap_id,
@@ -220,28 +226,25 @@ impl SwapManager {
             status: "waiting_user_deposit".to_string(),
         })
     }
-    
+
     /// Get swap details by ID with derived wallet addresses
     pub async fn get_swap(&self, swap_id: Uuid) -> SwapResult<SwapResponse> {
         // Get swap from database
-        let swap = self.db.swaps()
-            .get(swap_id)
-            .await
-            .context(DatabaseSnafu)?;
-        
-        
+        let swap = self.db.swaps().get(swap_id).await.context(DatabaseSnafu)?;
+
         // Derive wallet addresses
         let master_key = self.settings.master_key_bytes();
-        
-        let user_chain = self.chain_registry
-            .get(&swap.quote.from.chain)
-            .ok_or(SwapError::ChainNotSupported { chain: swap.quote.from.chain })?;
-        
-        
+
+        let user_chain = self.chain_registry.get(&swap.quote.from.chain).ok_or(
+            SwapError::ChainNotSupported {
+                chain: swap.quote.from.chain,
+            },
+        )?;
+
         let user_wallet = user_chain
             .derive_wallet(&master_key, &swap.user_deposit_salt)
             .map_err(|e| SwapError::WalletDerivation { source: e })?;
-        
+
         // Build response
         Ok(SwapResponse {
             id: swap.id,
@@ -275,7 +278,6 @@ impl SwapManager {
                 deposit_amount: swap.mm_deposit_status.as_ref().map(|d| d.amount),
                 deposit_detected_at: swap.mm_deposit_status.as_ref().map(|d| d.detected_at),
             },
-            settlement_tx: swap.settlement_status.as_ref().map(|s| s.tx_hash.clone()),
         })
     }
 }

@@ -5,7 +5,7 @@ use bitcoincore_rpc_async::bitcoin::Txid;
 use bitcoincore_rpc_async::json::GetRawTransactionVerbose;
 use corepc_node::Conf;
 use log::info;
-use tokio::task::JoinSet;
+use tokio::task::{JoinHandle, JoinSet};
 use tokio::time::Instant;
 
 use bitcoin::{Address as BitcoinAddress, Amount};
@@ -16,6 +16,13 @@ use electrsd::ElectrsD;
 use esplora_client::AsyncClient as EsploraClient;
 
 use crate::{get_new_temp_dir, Result, RiftDevnetCache};
+
+#[derive(Debug, Clone, Copy, Default)]
+pub enum MiningMode {
+    #[default]
+    Manual,
+    Interval(u64),
+}
 
 /// Holds all Bitcoin-related devnet state.
 pub struct BitcoinDevnet {
@@ -35,6 +42,8 @@ pub struct BitcoinDevnet {
     pub regtest: Arc<BitcoinRegtest>,
     pub bitcoin_datadir: tempfile::TempDir,
     pub electrsd_datadir: tempfile::TempDir,
+    pub mining_mode: MiningMode,
+    pub mining_thread: Option<JoinHandle<()>>,
 }
 
 impl BitcoinDevnet {
@@ -46,6 +55,7 @@ impl BitcoinDevnet {
         funded_addresses: Vec<String>,
         using_esplora: bool,
         fixed_esplora_url: bool,
+        mining_mode: MiningMode,
         _join_set: &mut JoinSet<Result<()>>,
         devnet_cache: Option<Arc<RiftDevnetCache>>,
     ) -> Result<(Self, u32)> {
@@ -267,6 +277,23 @@ impl BitcoinDevnet {
             }
         }
 
+        let alice_address_clone = alice_address.clone();
+        let bitcoin_rpc_client_clone = bitcoin_rpc_client.clone();
+        let mining_thread = if let MiningMode::Interval(interval) = mining_mode {
+            Some(tokio::spawn(async move {
+                loop {
+                    bitcoin_rpc_client_clone
+                        .generate_to_address(1, &alice_address_clone)
+                        .await
+                        .unwrap();
+
+                    tokio::time::sleep(Duration::from_secs(interval)).await;
+                }
+            }))
+        } else {
+            None
+        };
+
         let devnet = BitcoinDevnet {
             rpc_client: bitcoin_rpc_client.clone(),
             miner_address: alice_address,
@@ -280,6 +307,8 @@ impl BitcoinDevnet {
             regtest: bitcoin_regtest,
             bitcoin_datadir,
             electrsd_datadir,
+            mining_mode,
+            mining_thread,
         };
 
         // Get the actual blockchain height

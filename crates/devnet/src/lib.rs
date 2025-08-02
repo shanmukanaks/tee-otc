@@ -376,6 +376,7 @@ pub struct RiftDevnetBuilder {
     fork_config: Option<ForkConfig>,
     using_esplora: bool,
     token_indexer_database_url: Option<String>,
+    bitcoin_mining_mode: crate::bitcoin_devnet::MiningMode,
 }
 
 impl RiftDevnetBuilder {
@@ -395,6 +396,7 @@ impl RiftDevnetBuilder {
             fork_config: None,
             using_esplora: true,
             token_indexer_database_url: None,
+            bitcoin_mining_mode: crate::bitcoin_devnet::MiningMode::default(),
         }
     }
 
@@ -421,6 +423,11 @@ impl RiftDevnetBuilder {
     /// Optionally fund a given Bitcoin address.
     pub fn funded_bitcoin_address<T: Into<String>>(mut self, address: T) -> Self {
         self.funded_bitcoin_addreses.push(address.into());
+        self
+    }
+
+    pub fn bitcoin_mining_mode(mut self, mining_mode: crate::bitcoin_devnet::MiningMode) -> Self {
+        self.bitcoin_mining_mode = mining_mode;
         self
     }
 
@@ -477,6 +484,7 @@ impl RiftDevnetBuilder {
             self.funded_bitcoin_addreses.clone(),
             self.using_esplora,
             self.interactive,
+            self.bitcoin_mining_mode,
             &mut join_set,
             devnet_cache.clone(),
         )

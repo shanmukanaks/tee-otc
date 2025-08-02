@@ -3,7 +3,7 @@ use alloy::hex;
 use alloy::primitives::U256;
 use async_trait::async_trait;
 use bitcoin::secp256k1::{Secp256k1, SecretKey};
-use bitcoin::{consensus, Address, CompressedPublicKey, Network, PrivateKey, Script};
+use bitcoin::{consensus, Address, Amount, CompressedPublicKey, Network, PrivateKey, Script};
 use bitcoincore_rpc_async::{Auth, Client, RpcApi};
 use otc_models::{ChainType, Currency, TransferInfo, TxStatus, Wallet};
 use std::str::FromStr;
@@ -20,10 +20,11 @@ impl BitcoinChain {
     /// Auth (if necessary) should be embedded in the bitcoin_core_rpc_url
     pub async fn new(
         bitcoin_core_rpc_url: &str,
+        bitcoin_core_rpc_auth: Auth,
         esplora_url: &str,
         network: Network,
     ) -> Result<Self> {
-        let rpc_client = Client::new(bitcoin_core_rpc_url.to_string(), Auth::None)
+        let rpc_client = Client::new(bitcoin_core_rpc_url.to_string(), bitcoin_core_rpc_auth)
             .await
             .map_err(|_| crate::Error::Rpc {
                 message: "Failed to create Bitcoin RPC client".to_string(),
@@ -109,6 +110,16 @@ impl ChainOperations for BitcoinChain {
         embedded_nonce: Option<[u8; 16]>,
         _from_block_height: Option<u64>,
     ) -> Result<Option<TransferInfo>> {
+        info!("Searching for transfer");
+        let span = tracing::span!(
+            tracing::Level::DEBUG,
+            "search_for_transfer",
+            address = address,
+            currency = format!("{:?}", currency),
+            embedded_nonce = format!("{:?}", embedded_nonce)
+        );
+        let _enter = span.enter();
+
         if !matches!(currency.chain, ChainType::Bitcoin)
             || !matches!(currency.token, otc_models::TokenIdentifier::Native)
         {
@@ -125,6 +136,7 @@ impl ChainOperations for BitcoinChain {
                 embedded_nonce,
             )
             .await?;
+        debug!("Potential transfer: {:?}", potential_transfer);
         if potential_transfer.is_some() {
             let potential_transfer = potential_transfer.unwrap();
             // Validate the transfer hint
@@ -134,15 +146,6 @@ impl ChainOperations for BitcoinChain {
                     &bitcoin::Txid::from_str(&potential_transfer.tx_hash).unwrap(),
                 )
                 .await?;
-
-            // validate it's in the longest chain
-            if tx.confirmations.unwrap_or(0) > 0 {
-                tracing::debug!(
-                    message = "Transfer hint is not in the longest chain",
-                    tx_hash = potential_transfer.tx_hash
-                );
-                return Ok(None);
-            }
 
             // did the transfer hint lie about it's confirmations (it's okay if it was outdated)
             if potential_transfer.confirmations > tx.confirmations.unwrap_or(0) as u64 {
@@ -173,17 +176,33 @@ impl ChainOperations for BitcoinChain {
                 .outputs
                 .iter()
                 .filter_map(|output| {
-                    if address.matches_script_pubkey(Script::from_bytes(
-                        &hex::decode(&output.script_pubkey.hex).unwrap(),
-                    )) {
+                    let address_from_script = Address::from_script(
+                        Script::from_bytes(&hex::decode(&output.script_pubkey.hex).unwrap()),
+                        bitcoin::consensus::Params::from(self.network),
+                    );
+                    if address_from_script.is_err() {
+                        debug!(
+                            "Error parsing output script pubkey: {:?}",
+                            address_from_script.err()
+                        );
+                        None
+                    } else if *address_from_script.as_ref().unwrap() == address {
                         // validate the funds have been sent to our "address"
-                        if output.value >= minimum_amount as f64 {
+                        if output.value >= Amount::from_sat(minimum_amount).to_btc() {
                             // validate sufficient funds have been sent to our "to"
                             Some(output.clone())
                         } else {
+                            debug!(
+                                "Not enough funds were sent to our address, actual amount was: {:?} vs expected amount: {:?}",
+                                output.value, minimum_amount
+                            );
                             None
                         }
                     } else {
+                        debug!(
+                            "Output script pubkey is not spendable by our address: {:?}",
+                            address_from_script.unwrap()
+                        );
                         None
                     }
                 })
@@ -232,6 +251,7 @@ impl BitcoinChain {
     ) -> Result<Option<TransferInfo>> {
         let address = bitcoin::Address::from_str(address)?.assume_checked();
         let utxos = self.esplora_client.get_address_utxo(&address).await?;
+        debug!("UTXOs: {:?}", utxos);
         let current_block_height = self.esplora_client.get_height().await?;
         let mut most_confirmed_transfer: Option<TransferInfo> = None;
         for utxo in utxos {
@@ -240,10 +260,9 @@ impl BitcoinChain {
             }
             let cur_utxo_confirmations =
                 current_block_height - utxo.status.block_height.unwrap_or(current_block_height);
-            let most_confirmed_transfer_confirmations =
-                most_confirmed_transfer.as_ref().unwrap().confirmations;
             if most_confirmed_transfer.is_some()
-                && (most_confirmed_transfer_confirmations > cur_utxo_confirmations as u64)
+                && (most_confirmed_transfer.as_ref().unwrap().confirmations
+                    > cur_utxo_confirmations as u64)
             {
                 // if we already have a candidate let's do the cheap check to see if it's better confirmations wise before we fully validate it
                 // before we download the full tx
