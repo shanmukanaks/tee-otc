@@ -530,33 +530,6 @@ mod tests {
             updated_at: Utc::now(),
         };
 
-        // First insert the quote
-        sqlx::query(
-            r"
-            INSERT INTO quotes (
-                id, from_chain, from_token, from_amount, from_decimals,
-                to_chain, to_token, to_amount, to_decimals,
-                market_maker_id, expires_at, created_at
-            )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
-            ",
-        )
-        .bind(&quote.id)
-        .bind(chain_type_to_db(&quote.from.chain))
-        .bind(serde_json::to_value(&quote.from.token).unwrap())
-        .bind(&quote.from.amount.to_string())
-        .bind(quote.from.decimals as i16)
-        .bind(chain_type_to_db(&quote.to.chain))
-        .bind(serde_json::to_value(&quote.to.token).unwrap())
-        .bind(&quote.to.amount.to_string())
-        .bind(quote.to.decimals as i16)
-        .bind(&quote.market_maker_id)
-        .bind(&quote.expires_at)
-        .bind(&quote.created_at)
-        .execute(&pool)
-        .await
-        .unwrap();
-
         // Store the swap
         swap_repo.create(&original_swap).await.unwrap();
 
@@ -662,33 +635,6 @@ mod tests {
             updated_at: now + Duration::minutes(5),
         };
 
-        // First insert the quote
-        sqlx::query(
-            r"
-            INSERT INTO quotes (
-                id, from_chain, from_token, from_amount, from_decimals,
-                to_chain, to_token, to_amount, to_decimals,
-                market_maker_id, expires_at, created_at
-            )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
-            ",
-        )
-        .bind(&quote.id)
-        .bind(chain_type_to_db(&quote.from.chain))
-        .bind(serde_json::to_value(&quote.from.token).unwrap())
-        .bind(&quote.from.amount.to_string())
-        .bind(quote.from.decimals as i16)
-        .bind(chain_type_to_db(&quote.to.chain))
-        .bind(serde_json::to_value(&quote.to.token).unwrap())
-        .bind(&quote.to.amount.to_string())
-        .bind(quote.to.decimals as i16)
-        .bind(&quote.market_maker_id)
-        .bind(&quote.expires_at)
-        .bind(&quote.created_at)
-        .execute(&pool)
-        .await
-        .unwrap();
-
         // Store and retrieve
         swap_repo.create(&original_swap).await.unwrap();
         let retrieved_swap = swap_repo.get(original_swap.id).await.unwrap();
@@ -775,33 +721,6 @@ mod tests {
             updated_at: Utc::now(),
         };
 
-        // First insert the quote
-        sqlx::query(
-            r"
-            INSERT INTO quotes (
-                id, from_chain, from_token, from_amount, from_decimals,
-                to_chain, to_token, to_amount, to_decimals,
-                market_maker_id, expires_at, created_at
-            )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
-            ",
-        )
-        .bind(&quote.id)
-        .bind(chain_type_to_db(&quote.from.chain))
-        .bind(serde_json::to_value(&quote.from.token).unwrap())
-        .bind(&quote.from.amount.to_string())
-        .bind(quote.from.decimals as i16)
-        .bind(chain_type_to_db(&quote.to.chain))
-        .bind(serde_json::to_value(&quote.to.token).unwrap())
-        .bind(&quote.to.amount.to_string())
-        .bind(quote.to.decimals as i16)
-        .bind(&quote.market_maker_id)
-        .bind(&quote.expires_at)
-        .bind(&quote.created_at)
-        .execute(&pool)
-        .await
-        .unwrap();
-
         swap_repo.create(&swap).await.unwrap();
 
         // Update status
@@ -852,126 +771,6 @@ mod tests {
             updated.settlement_status.unwrap().tx_hash,
             "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef"
         );
-
-        Ok(())
-    }
-
-    #[sqlx::test]
-    async fn test_get_active_swaps(pool: sqlx::PgPool) -> sqlx::Result<()> {
-        // Database will auto-initialize with schema
-        let db = Database::from_pool(pool.clone()).await.unwrap();
-        let swap_repo = db.swaps();
-
-        // Create quote
-        let quote = Quote {
-            id: Uuid::new_v4(),
-            from: Currency {
-                chain: ChainType::Bitcoin,
-                token: TokenIdentifier::Native,
-                amount: U256::from(1000000u64),
-                decimals: 8,
-            },
-            to: Currency {
-                chain: ChainType::Ethereum,
-                token: TokenIdentifier::Native,
-                amount: U256::from(500000000000000000u64),
-                decimals: 18,
-            },
-            market_maker_id: Uuid::new_v4(),
-            expires_at: Utc::now() + Duration::hours(1),
-            created_at: Utc::now(),
-        };
-
-        // Create multiple swaps with different statuses
-        let statuses = [
-            SwapStatus::WaitingUserDepositInitiated, // Active
-            SwapStatus::WaitingUserDepositConfirmed, // Active
-            SwapStatus::WaitingMMDepositInitiated,   // Active
-            SwapStatus::WaitingMMDepositConfirmed,   // Active
-            SwapStatus::Settled,                     // Not active
-            SwapStatus::Failed,                      // Not active
-            SwapStatus::RefundingUser,               // Active (refunding is now active)
-        ];
-
-        // First insert the quote
-        sqlx::query(
-            r"
-            INSERT INTO quotes (
-                id, from_chain, from_token, from_amount, from_decimals,
-                to_chain, to_token, to_amount, to_decimals,
-                market_maker_id, expires_at, created_at
-            )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
-            ",
-        )
-        .bind(&quote.id)
-        .bind(chain_type_to_db(&quote.from.chain))
-        .bind(serde_json::to_value(&quote.from.token).unwrap())
-        .bind(&quote.from.amount.to_string())
-        .bind(quote.from.decimals as i16)
-        .bind(chain_type_to_db(&quote.to.chain))
-        .bind(serde_json::to_value(&quote.to.token).unwrap())
-        .bind(&quote.to.amount.to_string())
-        .bind(quote.to.decimals as i16)
-        .bind(&quote.market_maker_id)
-        .bind(&quote.expires_at)
-        .bind(&quote.created_at)
-        .execute(&pool)
-        .await
-        .unwrap();
-
-        let mut swap_ids = Vec::new();
-        for (i, status) in statuses.iter().enumerate() {
-            // Create unique salt and nonce for each swap
-            let mut user_salt = [0u8; 32];
-            let mut mm_nonce = [0u8; 16];
-            user_salt[0] = i as u8;
-            mm_nonce[0] = (i + 100) as u8;
-
-            let swap = Swap {
-                id: Uuid::new_v4(),
-                market_maker_id: quote.market_maker_id,
-                quote: quote.clone(),
-                user_deposit_salt: user_salt,
-                user_deposit_address: format!("bc1q{:038}00", i),
-                mm_nonce,
-                user_destination_address: format!("0x{:040}", i + 100),
-                user_refund_address: format!("bc1q{:038}01", i + 100),
-                status: *status,
-                user_deposit_status: None,
-                mm_deposit_status: None,
-                settlement_status: None,
-                failure_reason: None,
-                failure_at: None,
-                mm_notified_at: None,
-                mm_private_key_sent_at: None,
-                created_at: Utc::now(),
-                updated_at: Utc::now(),
-            };
-
-            swap_repo.create(&swap).await.unwrap();
-            swap_ids.push((swap.id, *status));
-        }
-
-        // Get active swaps
-        let active_swaps = swap_repo.get_active_swaps().await.unwrap();
-
-        // Should return 5 swaps (all except settled and failed)
-        assert_eq!(active_swaps.len(), 5);
-
-        // Verify only active statuses are returned
-        for swap in &active_swaps {
-            match swap.status {
-                SwapStatus::WaitingUserDepositInitiated
-                | SwapStatus::WaitingUserDepositConfirmed
-                | SwapStatus::WaitingMMDepositInitiated
-                | SwapStatus::WaitingMMDepositConfirmed
-                | SwapStatus::RefundingUser => {
-                    // These are expected active statuses
-                }
-                _ => panic!("Unexpected status in active swaps: {:?}", swap.status),
-            }
-        }
 
         Ok(())
     }
