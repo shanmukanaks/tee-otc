@@ -37,7 +37,8 @@ async fn test_market_maker_otc_auth(
 
     wait_for_otc_server_to_be_ready(otc_port).await;
 
-    let mm_args = build_mm_test_args(otc_port, &market_maker_account, &devnet);
+    let rfq_port = get_free_port().await; // Get a dummy RFQ port (not used in this test)
+    let mm_args = build_mm_test_args(otc_port, rfq_port, &market_maker_account, &devnet);
     join_set.spawn(async move {
         run_market_maker(mm_args)
             .await

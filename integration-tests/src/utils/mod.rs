@@ -11,6 +11,7 @@ use ctor::ctor;
 use devnet::MultichainAccount;
 use market_maker::{evm_wallet::EVMWallet, MarketMakerArgs};
 use otc_server::{api::SwapResponse, OtcServerArgs};
+use rfq_server::RfqServerArgs;
 use sqlx::postgres::PgConnectOptions;
 use tokio::{net::TcpListener, task::JoinSet};
 use tracing::info;
@@ -90,6 +91,31 @@ pub async fn wait_for_otc_server_to_be_ready(otc_port: u16) {
     }
 }
 
+pub async fn wait_for_rfq_server_to_be_ready(rfq_port: u16) {
+    // Hit the rfq server status endpoint every 100ms until it returns 200
+    let client = reqwest::Client::new();
+    let status_url = format!("http://127.0.0.1:{rfq_port}/status");
+
+    let start_time = std::time::Instant::now();
+    let timeout = Duration::from_secs(INTEGRATION_TEST_TIMEOUT_SECS);
+
+    loop {
+        assert!(
+            (start_time.elapsed() <= timeout),
+            "Timeout waiting for RFQ server to become ready"
+        );
+
+        tokio::time::sleep(Duration::from_millis(100)).await;
+
+        if let Ok(response) = client.get(&status_url).send().await {
+            if response.status() == 200 {
+                println!("RFQ server is ready!");
+                break;
+            }
+        }
+    }
+}
+
 pub async fn wait_for_swap_to_be_settled(otc_port: u16, swap_id: Uuid) {
     let client = reqwest::Client::new();
 
@@ -135,6 +161,7 @@ pub fn build_tmp_bitcoin_wallet_db_file() -> String {
 
 pub fn build_mm_test_args(
     otc_port: u16,
+    rfq_port: u16,
     multichain_account: &MultichainAccount,
     devnet: &devnet::RiftDevnet,
 ) -> MarketMakerArgs {
@@ -143,6 +170,7 @@ pub fn build_mm_test_args(
         api_key_id: TEST_API_KEY_ID.to_string(),
         api_key: TEST_API_KEY.to_string(),
         otc_ws_url: format!("ws://127.0.0.1:{otc_port}/ws/mm"),
+        rfq_ws_url: format!("ws://127.0.0.1:{rfq_port}/ws/mm"),
         auto_accept: true,
         log_level: "info".to_string(),
         bitcoin_wallet_db_file: build_tmp_bitcoin_wallet_db_file(),
@@ -154,6 +182,16 @@ pub fn build_mm_test_args(
         ethereum_wallet_private_key: multichain_account.secret_bytes,
         ethereum_confirmations: 1,
         ethereum_rpc_ws_url: devnet.ethereum.anvil.ws_endpoint(),
+    }
+}
+
+pub fn build_rfq_server_test_args(rfq_port: u16) -> RfqServerArgs {
+    RfqServerArgs {
+        port: rfq_port,
+        host: IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)),
+        log_level: "info".to_string(),
+        whitelist_file: get_whitelist_file_path(),
+        quote_timeout_milliseconds: 5000,
     }
 }
 

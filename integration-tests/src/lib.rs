@@ -17,3 +17,6 @@ mod evm_wallet_test;
 
 #[cfg(test)]
 mod bitcoin_wallet_test;
+
+#[cfg(test)]
+mod rfq_flow_test;

@@ -1,11 +1,11 @@
 use crate::{
     api::swaps::{CreateSwapRequest, CreateSwapResponse, SwapResponse},
-    auth::ApiKeyStore,
     config::Settings,
     db::Database,
     services::{MMRegistry, SwapManager, SwapMonitoringService},
     OtcServerArgs, Result,
 };
+use otc_auth::ApiKeyStore;
 use axum::{
     extract::{
         ws::{Message, WebSocket, WebSocketUpgrade},
@@ -31,7 +31,7 @@ pub struct AppState {
     pub db: Database,
     pub swap_manager: Arc<SwapManager>,
     pub mm_registry: Arc<MMRegistry>,
-    pub api_key_store: Arc<ApiKeyStore>,
+    pub api_key_store: Arc<otc_auth::ApiKeyStore>,
 }
 
 #[derive(Serialize, Deserialize)]

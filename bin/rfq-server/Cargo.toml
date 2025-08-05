@@ -10,5 +10,22 @@ repository.workspace = true
 name = "rfq-server"
 path = "src/main.rs"
 
+
 [dependencies]
+otc-models = { workspace = true }
+otc-auth = { path = "../../crates/otc-auth" }
+otc-rfq-protocol = { path = "../../crates/otc-rfq-protocol" }
+
 tokio = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+snafu = { workspace = true }
+axum = { workspace = true }
+clap = { workspace = true }
+uuid = { workspace = true }
+chrono = { workspace = true }
+dashmap = { workspace = true }
+futures-util = { workspace = true }
+alloy = { workspace = true }

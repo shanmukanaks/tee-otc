@@ -108,7 +108,8 @@ async fn test_swap_from_bitcoin_to_ethereum(
         }
     }
 
-    let mm_args = build_mm_test_args(otc_port, &market_maker_account, &devnet);
+    let rfq_port = get_free_port().await; // Get a dummy RFQ port (not used in this test)
+    let mm_args = build_mm_test_args(otc_port, rfq_port, &market_maker_account, &devnet);
     let mm_uuid = mm_args.market_maker_id.clone().parse::<Uuid>().unwrap();
     service_join_set.spawn(async move {
         run_market_maker(mm_args)
@@ -278,7 +279,8 @@ async fn test_swap_from_ethereum_to_bitcoin(
         }
     }
 
-    let mm_args = build_mm_test_args(otc_port, &market_maker_account, &devnet);
+    let rfq_port = get_free_port().await; // Get a dummy RFQ port (not used in this test)
+    let mm_args = build_mm_test_args(otc_port, rfq_port, &market_maker_account, &devnet);
     let mm_uuid = mm_args.market_maker_id.clone().parse::<Uuid>().unwrap();
     service_join_set.spawn(async move {
         run_market_maker(mm_args)

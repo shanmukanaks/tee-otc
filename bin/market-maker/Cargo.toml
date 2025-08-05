@@ -14,6 +14,7 @@ path = "src/main.rs"
 common = {workspace = true}
 otc-models = { workspace = true }
 otc-mm-protocol = { workspace = true }
+otc-rfq-protocol = { path = "../../crates/otc-rfq-protocol" }
 
 alloy = { workspace = true }
 async-trait = { workspace = true }

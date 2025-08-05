@@ -26,3 +26,5 @@ bitcoin = {workspace = true}
 common = {workspace = true}
 otc-models = {workspace = true}
 uuid = {workspace= true}
+rfq-server ={workspace= true}
+serde = {workspace = true}

@@ -16,6 +16,7 @@ common = { workspace = true }
 otc-models = { workspace = true, features = ["sqlx"] }
 otc-chains = { workspace = true }
 otc-mm-protocol = { workspace = true }
+otc-auth = { path = "../../crates/otc-auth" }
 
 tokio = { workspace = true }
 serde = { workspace = true }
