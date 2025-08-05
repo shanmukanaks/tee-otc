@@ -43,6 +43,7 @@ services:
       PONDER_CONTRACT_START_BLOCK: ${PONDER_CONTRACT_START_BLOCK:-0}
       PONDER_LOG_LEVEL: ${PONDER_LOG_LEVEL:-info}
       PONDER_PORT: ${PONDER_PORT:-4001}
+      DATABASE_SCHEMA: ${PONDER_SCHEMA:-default}
 
       # Node environment
       NODE_ENV: production
