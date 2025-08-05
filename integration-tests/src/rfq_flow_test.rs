@@ -2,13 +2,12 @@ use alloy::primitives::U256;
 use market_maker::run_market_maker;
 use otc_models::{ChainType, Currency, TokenIdentifier};
 use rfq_server::server::run_server as run_rfq_server;
-use serde::{Deserialize, Serialize};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use tokio::task::JoinSet;
-use uuid::Uuid;
 
 use crate::utils::{
-    build_mm_test_args, build_rfq_server_test_args, get_free_port, wait_for_rfq_server_to_be_ready,
+    build_mm_test_args, build_rfq_server_test_args, get_free_port,
+    wait_for_market_maker_to_connect_to_rfq_server, wait_for_rfq_server_to_be_ready,
     INTEGRATION_TEST_TIMEOUT_SECS, TEST_MARKET_MAKER_ID,
 };
 
@@ -52,35 +51,7 @@ async fn test_rfq_flow() {
     });
 
     // Wait for market maker to connect to RFQ server
-    let connected_url = format!("http://127.0.0.1:{rfq_port}/api/v1/market-makers/connected");
-
-    let client = reqwest::Client::new();
-    let start_time = std::time::Instant::now();
-    let timeout = Duration::from_secs(INTEGRATION_TEST_TIMEOUT_SECS);
-
-    loop {
-        assert!(
-            (start_time.elapsed() <= timeout),
-            "Timeout waiting for market maker to connect to RFQ server"
-        );
-
-        tokio::time::sleep(Duration::from_millis(100)).await;
-
-        if let Ok(response) = client.get(&connected_url).send().await {
-            if response.status() == 200 {
-                if let Ok(body) = response.json::<serde_json::Value>().await {
-                    if let Some(market_makers) = body["market_makers"].as_array() {
-                        if market_makers.len() == 1
-                            && market_makers[0].as_str() == Some(TEST_MARKET_MAKER_ID)
-                        {
-                            println!("Market maker is connected to RFQ server!");
-                            break;
-                        }
-                    }
-                }
-            }
-        }
-    }
+    wait_for_market_maker_to_connect_to_rfq_server(rfq_port).await;
 
     let from_amount = U256::from(100000000u64);
     let expected_to_amount = U256::from(100000000u64);
@@ -102,12 +73,20 @@ async fn test_rfq_flow() {
     };
 
     let quote_request_url = format!("http://127.0.0.1:{rfq_port}/api/v1/quotes/request");
+    let client = reqwest::Client::new();
+
+    // Start timing the quote request
+    let start_time = Instant::now();
+
     let response = client
         .post(&quote_request_url)
         .json(&quote_request)
         .send()
         .await
         .expect("Should be able to send quote request");
+
+    // Calculate and record the latency
+    let latency = start_time.elapsed();
 
     assert_eq!(response.status(), 200, "Quote request should succeed");
 
@@ -143,6 +122,9 @@ async fn test_rfq_flow() {
         quote.to.amount, expected_to_amount,
         "To amount should be symmetric (for now)"
     );
+
+    // Output the latency to get the quote
+    tracing::info!("Quote request latency: {:?}", latency);
 
     println!("RFQ flow test completed successfully!");
 }

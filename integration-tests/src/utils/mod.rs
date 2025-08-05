@@ -151,6 +151,38 @@ pub async fn wait_for_swap_to_be_settled(otc_port: u16, swap_id: Uuid) {
     }
 }
 
+pub async fn wait_for_market_maker_to_connect_to_rfq_server(rfq_port: u16) {
+    let client = reqwest::Client::new();
+    let connected_url = format!("http://127.0.0.1:{rfq_port}/api/v1/market-makers/connected");
+
+    let start_time = std::time::Instant::now();
+    let timeout = Duration::from_secs(INTEGRATION_TEST_TIMEOUT_SECS);
+
+    loop {
+        assert!(
+            (start_time.elapsed() <= timeout),
+            "Timeout waiting for market maker to connect to RFQ server"
+        );
+
+        tokio::time::sleep(Duration::from_millis(100)).await;
+
+        if let Ok(response) = client.get(&connected_url).send().await {
+            if response.status() == 200 {
+                if let Ok(body) = response.json::<serde_json::Value>().await {
+                    if let Some(market_makers) = body["market_makers"].as_array() {
+                        if market_makers.len() == 1
+                            && market_makers[0].as_str() == Some(TEST_MARKET_MAKER_ID)
+                        {
+                            println!("Market maker is connected to RFQ server!");
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
 pub fn build_bitcoin_wallet_descriptor(private_key: &bitcoin::PrivateKey) -> String {
     format!("wpkh({private_key})")
 }
