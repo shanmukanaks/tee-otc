@@ -16,8 +16,8 @@ RUN pnpm install --frozen-lockfile
 # Copy application source
 COPY . .
 
-# Create .ponder directory with proper permissions
-RUN mkdir -p .ponder && chown -R node:node .ponder
+# Create .ponder directory and ensure node user owns everything
+RUN mkdir -p .ponder && chown -R node:node /app
 
 # Switch to non-root user
 USER node
