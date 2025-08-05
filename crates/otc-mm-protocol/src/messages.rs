@@ -1,6 +1,6 @@
 use alloy::primitives::U256;
 use chrono::{DateTime, Utc};
-use otc_models::Currency;
+use otc_models::{ChainType, Currency};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -57,6 +57,7 @@ pub enum MMRequest {
         swap_id: Uuid,
         /// Private key for user's deposit wallet
         user_deposit_private_key: String,
+        chain: ChainType,
         /// Final settlement details
         user_withdrawal_tx: String,
         timestamp: DateTime<Utc>,

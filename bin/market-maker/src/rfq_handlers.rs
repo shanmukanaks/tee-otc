@@ -1,14 +1,14 @@
 use chrono::Utc;
 use otc_models::{Currency, Quote};
-use otc_rfq_protocol::{RFQRequest, RFQResponse, ProtocolMessage};
+use otc_rfq_protocol::{ProtocolMessage, RFQRequest, RFQResponse};
 use tracing::{info, warn};
 use uuid::Uuid;
 
-pub struct RfqMessageHandler {
+pub struct RFQMessageHandler {
     market_maker_id: String,
 }
 
-impl RfqMessageHandler {
+impl RFQMessageHandler {
     pub fn new(market_maker_id: String) -> Self {
         Self { market_maker_id }
     }

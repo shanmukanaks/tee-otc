@@ -1,6 +1,6 @@
 use dashmap::DashMap;
 use otc_mm_protocol::{MMRequest, ProtocolMessage};
-use otc_models::Currency;
+use otc_models::{ChainType, Currency};
 use snafu::Snafu;
 use std::sync::Arc;
 use tokio::sync::{mpsc, oneshot};
@@ -158,6 +158,7 @@ impl MMRegistry {
         market_maker_id: &Uuid,
         swap_id: &Uuid,
         user_deposit_private_key: &str,
+        chain: ChainType,
         mm_tx_hash: &str,
     ) {
         if let Some(conn) = self.connections.get(market_maker_id) {
@@ -168,6 +169,7 @@ impl MMRegistry {
                     request_id: Uuid::new_v4(),
                     swap_id: *swap_id,
                     user_deposit_private_key: user_deposit_private_key.to_string(),
+                    chain,
                     user_withdrawal_tx: mm_tx_hash.to_string(),
                     timestamp: chrono::Utc::now(),
                 },

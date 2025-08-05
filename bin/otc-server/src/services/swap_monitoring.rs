@@ -418,12 +418,14 @@ impl SwapMonitoringService {
                     let swap_id = swap.id;
                     let private_key = user_wallet.private_key().to_string();
                     let mm_tx_hash = mm_deposit.tx_hash.clone();
+                    let chain = quote.from.chain;
                     tokio::spawn(async move {
                         let _ = mm_registry
                             .notify_swap_complete(
                                 &market_maker_id,
                                 &swap_id,
                                 &private_key,
+                                chain,
                                 &mm_tx_hash,
                             )
                             .await;

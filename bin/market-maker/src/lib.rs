@@ -1,8 +1,8 @@
 pub mod bitcoin_wallet;
-mod client;
 mod config;
 pub mod evm_wallet;
-mod handlers;
+mod otc_client;
+mod otc_handler;
 mod rfq_client;
 mod rfq_handlers;
 mod strategy;
@@ -27,7 +27,7 @@ pub enum Error {
     Config { source: config::ConfigError },
 
     #[snafu(display("Client error: {}", source))]
-    Client { source: client::ClientError },
+    Client { source: otc_client::ClientError },
 
     #[snafu(display("Bitcoin wallet error: {}", source))]
     BitcoinWallet {
@@ -58,8 +58,8 @@ impl From<wallet::WalletError> for Error {
     }
 }
 
-impl From<client::ClientError> for Error {
-    fn from(error: client::ClientError) -> Self {
+impl From<otc_client::ClientError> for Error {
+    fn from(error: otc_client::ClientError) -> Self {
         Error::Client { source: error }
     }
 }
@@ -172,7 +172,7 @@ pub async fn run_market_maker(args: MarketMakerArgs) -> Result<()> {
         )),
     );
 
-    let otc_fill_client = client::OtcFillClient::new(
+    let otc_fill_client = otc_client::OtcFillClient::new(
         Config {
             market_maker_id: args.market_maker_id.clone(),
             api_key_id: args.api_key_id.clone(),
@@ -185,7 +185,7 @@ pub async fn run_market_maker(args: MarketMakerArgs) -> Result<()> {
         wallet_manager,
     );
     join_set.spawn(async move { otc_fill_client.run().await.map_err(Error::from) });
-    
+
     // Add RFQ client for handling quote requests
     let rfq_client = rfq_client::RfqClient::new(
         Config {
@@ -199,12 +199,12 @@ pub async fn run_market_maker(args: MarketMakerArgs) -> Result<()> {
         },
         args.rfq_ws_url,
     );
-    join_set.spawn(async move { 
-        rfq_client.run().await.map_err(|e| Error::Client { 
-            source: client::ClientError::BackgroundThreadExited { 
-                source: Box::new(e) 
-            } 
-        }) 
+    join_set.spawn(async move {
+        rfq_client.run().await.map_err(|e| Error::Client {
+            source: otc_client::ClientError::BackgroundThreadExited {
+                source: Box::new(e),
+            },
+        })
     });
 
     handle_background_thread_result(join_set.join_next().await).context(BackgroundThreadSnafu)?;

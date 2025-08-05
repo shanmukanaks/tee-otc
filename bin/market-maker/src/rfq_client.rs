@@ -1,5 +1,5 @@
 use crate::config::Config;
-use crate::rfq_handlers::RfqMessageHandler;
+use crate::rfq_handlers::RFQMessageHandler;
 use futures_util::{SinkExt, StreamExt};
 use otc_rfq_protocol::{ProtocolMessage, RFQRequest};
 use snafu::prelude::*;
@@ -37,13 +37,13 @@ type Result<T, E = RfqClientError> = std::result::Result<T, E>;
 
 pub struct RfqClient {
     config: Config,
-    handler: RfqMessageHandler,
+    handler: RFQMessageHandler,
     rfq_ws_url: String,
 }
 
 impl RfqClient {
     pub fn new(config: Config, rfq_ws_url: String) -> Self {
-        let handler = RfqMessageHandler::new(config.market_maker_id.clone());
+        let handler = RFQMessageHandler::new(config.market_maker_id.clone());
         Self {
             config,
             handler,

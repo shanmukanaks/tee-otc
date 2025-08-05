@@ -4,13 +4,13 @@ use chrono::Utc;
 use otc_mm_protocol::{MMErrorCode, MMRequest, MMResponse, MMStatus, ProtocolMessage};
 use tracing::{info, warn};
 
-pub struct MessageHandler {
+pub struct OTCMessageHandler {
     config: Config,
     strategy: ValidationStrategy,
     wallet_manager: WalletManager,
 }
 
-impl MessageHandler {
+impl OTCMessageHandler {
     pub fn new(config: Config, wallet_manager: WalletManager) -> Self {
         let strategy = ValidationStrategy::new(config.auto_accept);
         Self {
@@ -76,14 +76,10 @@ impl MessageHandler {
                 info!("Quote ID: {}", quote_id);
                 info!("User tx hash: {}", user_tx_hash);
 
-                // TODO: Implement actual deposit logic
-                // For now, just acknowledge
-                warn!("TODO: Implement actual deposit to {}", deposit_address);
-
-                // In a real implementation, we would:
-                // 1. Verify the user's deposit on-chain
-                // 2. Initiate our deposit to the provided address
-                // 3. Send DepositInitiated response with our tx hash
+                warn!(
+                    "TODO: implement locking up funds for this user {}",
+                    deposit_address
+                );
 
                 None // For now, we don't respond to this
             }
@@ -150,7 +146,8 @@ impl MessageHandler {
             MMRequest::SwapComplete {
                 request_id,
                 swap_id,
-
+                user_deposit_private_key,
+                chain,
                 user_withdrawal_tx,
                 ..
             } => {

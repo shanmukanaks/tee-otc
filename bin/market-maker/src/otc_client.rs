@@ -1,4 +1,4 @@
-use crate::handlers::MessageHandler;
+use crate::otc_handler::OTCMessageHandler;
 use crate::{config::Config, wallet::WalletManager};
 use futures_util::{SinkExt, StreamExt};
 use otc_mm_protocol::{MMRequest, ProtocolMessage};
@@ -41,12 +41,12 @@ type Result<T, E = ClientError> = std::result::Result<T, E>;
 
 pub struct OtcFillClient {
     config: Config,
-    handler: MessageHandler,
+    handler: OTCMessageHandler,
 }
 
 impl OtcFillClient {
     pub fn new(config: Config, wallet_manager: WalletManager) -> Self {
-        let handler = MessageHandler::new(config.clone(), wallet_manager);
+        let handler = OTCMessageHandler::new(config.clone(), wallet_manager);
         Self { config, handler }
     }
 
