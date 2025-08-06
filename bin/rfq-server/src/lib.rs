@@ -53,4 +53,8 @@ pub struct RfqServerArgs {
     /// Quote request timeout in milliseconds
     #[arg(long, env = "QUOTE_TIMEOUT_MILLISECONDS", default_value = "500")]
     pub quote_timeout_milliseconds: u64,
+
+    /// CORS domain to allow (supports wildcards like "*.example.com")
+    #[arg(long = "corsdomain", env = "CORS_DOMAIN")]
+    pub cors_domain: Option<String>,
 }

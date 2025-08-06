@@ -108,6 +108,10 @@ pub struct OtcServerArgs {
     /// Chain monitor interval in seconds
     #[arg(long, env = "CHAIN_MONITOR_INTERVAL", default_value = "10")]
     pub chain_monitor_interval_seconds: u64,
+
+    /// CORS domain to allow (supports wildcards like "*.example.com")
+    #[arg(long = "corsdomain", env = "CORS_DOMAIN")]
+    pub cors_domain: Option<String>,
 }
 
 fn parse_auth(s: &str) -> Result<Auth, String> {

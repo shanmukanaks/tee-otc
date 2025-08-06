@@ -12,6 +12,7 @@ use axum::{
     routing::{get, post},
     Json, Router,
 };
+use tower_http::cors::{CorsLayer, AllowOrigin};
 use futures_util::{SinkExt, StreamExt};
 use otc_auth::ApiKeyStore;
 use otc_models::{Currency, Quote};
@@ -77,7 +78,7 @@ pub async fn run_server(args: RfqServerArgs) -> Result<()> {
         quote_aggregator,
     };
 
-    let app = Router::new()
+    let mut app = Router::new()
         // Health check
         .route("/status", get(status_handler))
         // WebSocket endpoint for market makers
@@ -89,6 +90,45 @@ pub async fn run_server(args: RfqServerArgs) -> Result<()> {
             get(get_connected_market_makers),
         )
         .with_state(state);
+
+    // Add CORS layer if cors_domain is specified
+    if let Some(ref cors_domain_pattern) = args.cors_domain {
+        let cors_domain = cors_domain_pattern.clone();
+        let cors = if cors_domain == "*" {
+            // Allow all origins
+            CorsLayer::new()
+                .allow_origin(tower_http::cors::Any)
+                .allow_methods(tower_http::cors::Any)
+                .allow_headers(tower_http::cors::Any)
+        } else {
+            // Handle specific patterns
+            CorsLayer::new()
+                .allow_origin(AllowOrigin::predicate(move |origin, _request_parts| {
+                    let origin_str = origin.to_str().unwrap_or("");
+                    
+                    // Support wildcard patterns
+                    if cors_domain.contains('*') {
+                        let pattern = cors_domain.replace("*", "");
+                        if cors_domain.starts_with('*') {
+                            origin_str.ends_with(&pattern)
+                        } else if cors_domain.ends_with('*') {
+                            origin_str.starts_with(&pattern[..pattern.len()-1])
+                        } else {
+                            // Handle middle wildcards like "*.example.*"
+                            let parts: Vec<&str> = cors_domain.split('*').collect();
+                            parts.iter().all(|part| origin_str.contains(part))
+                        }
+                    } else {
+                        origin_str == cors_domain
+                    }
+                }))
+                .allow_methods(tower_http::cors::Any)
+                .allow_headers(tower_http::cors::Any)
+        };
+        
+        app = app.layer(cors);
+        info!("CORS enabled for domain: {}", cors_domain_pattern);
+    }
 
     info!("Listening on {}", addr);
     let listener = tokio::net::TcpListener::bind(addr)

@@ -201,6 +201,10 @@ impl P2WPKHBitcoinWallet {
                 .expect("Invalid public key for P2WPKH"),
         )
     }
+
+    pub fn descriptor(&self) -> String {
+        format!("wpkh({})", self.private_key)
+    }
 }
 
 // Placeholder for the signing function - you'll need to implement this

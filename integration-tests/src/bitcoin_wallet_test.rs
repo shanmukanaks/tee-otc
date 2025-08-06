@@ -58,19 +58,11 @@ async fn test_bitcoin_wallet_basic_operations(
     // Create a temporary database for the wallet
     let db_path = format!("/tmp/bitcoin_wallet_test_{}.db", std::process::id());
 
-    // Create descriptor from the wallet's private key in WIF format
-    // Convert the secret key to WIF for use in descriptor
-    let private_key = bitcoin::PrivateKey::new(
-        market_maker_account.bitcoin_wallet.secret_key,
-        Network::Regtest,
-    );
-    let descriptor = format!("wpkh({})", private_key);
-
     // Create the Bitcoin wallet with transaction broadcaster
     let mut join_set = JoinSet::new();
     let bitcoin_wallet = BitcoinWallet::new(
         &db_path,
-        &descriptor,
+        &market_maker_account.bitcoin_wallet.descriptor(),
         Network::Regtest,
         esplora_url,
         &mut join_set,
