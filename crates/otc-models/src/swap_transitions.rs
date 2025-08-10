@@ -271,7 +271,7 @@ impl Swap {
 
 #[cfg(test)]
 mod tests {
-    use crate::{ChainType, Currency, Quote, TokenIdentifier};
+    use crate::{ChainType, Currency, Lot, Quote, TokenIdentifier};
 
     use super::*;
     use chrono::Duration;
@@ -283,17 +283,21 @@ mod tests {
             quote: Quote {
                 id: Uuid::new_v4(),
                 market_maker_id: Uuid::new_v4(),
-                from: Currency {
-                    chain: ChainType::Ethereum,
-                    token: TokenIdentifier::Native,
+                from: Lot {
+                    currency: Currency {
+                        chain: ChainType::Ethereum,
+                        token: TokenIdentifier::Native,
+                        decimals: 18,
+                    },
                     amount: U256::from(1000000u64),
-                    decimals: 18,
                 },
-                to: Currency {
-                    chain: ChainType::Bitcoin,
-                    token: TokenIdentifier::Native,
+                to: Lot {
+                    currency: Currency {
+                        chain: ChainType::Bitcoin,
+                        token: TokenIdentifier::Native,
+                        decimals: 8,
+                    },
                     amount: U256::from(1000000u64),
-                    decimals: 8,
                 },
                 expires_at: Utc::now() + Duration::hours(1),
                 created_at: Utc::now(),

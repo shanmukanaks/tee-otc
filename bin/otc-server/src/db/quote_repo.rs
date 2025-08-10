@@ -5,7 +5,7 @@ use uuid::Uuid;
 
 use crate::error::OtcServerResult;
 
-use super::conversions::currency_to_db;
+use super::conversions::lot_to_db;
 use super::row_mappers::FromRow;
 
 #[derive(Clone)]
@@ -19,8 +19,8 @@ impl QuoteRepository {
     }
 
     pub async fn create(&self, quote: &Quote) -> OtcServerResult<()> {
-        let (from_chain, from_token, from_amount, from_decimals) = currency_to_db(&quote.from)?;
-        let (to_chain, to_token, to_amount, to_decimals) = currency_to_db(&quote.to)?;
+        let (from_chain, from_token, from_amount, from_decimals) = lot_to_db(&quote.from)?;
+        let (to_chain, to_token, to_amount, to_decimals) = lot_to_db(&quote.to)?;
 
         sqlx::query(
             r#"
@@ -154,7 +154,7 @@ mod tests {
     use crate::db::Database;
     use alloy::primitives::U256;
     use chrono::{Duration, Utc};
-    use otc_models::{ChainType, Currency, Quote, TokenIdentifier};
+    use otc_models::{ChainType, Currency, Lot, Quote, TokenIdentifier};
     use uuid::Uuid;
 
     #[sqlx::test]
@@ -166,17 +166,21 @@ mod tests {
         // Create a test quote
         let original_quote = Quote {
             id: Uuid::new_v4(),
-            from: Currency {
-                chain: ChainType::Bitcoin,
-                token: TokenIdentifier::Native,
+            from: Lot {
+                currency: Currency {
+                    chain: ChainType::Bitcoin,
+                    token: TokenIdentifier::Native,
+                    decimals: 8,
+                },
                 amount: U256::from(1000000u64), // 0.01 BTC in sats
-                decimals: 8,
             },
-            to: Currency {
-                chain: ChainType::Ethereum,
-                token: TokenIdentifier::Native,
+            to: Lot {
+                currency: Currency {
+                    chain: ChainType::Ethereum,
+                    token: TokenIdentifier::Native,
+                    decimals: 18,
+                },
                 amount: U256::from(500000000000000000u64), // 0.5 ETH in wei
-                decimals: 18,
             },
             market_maker_id: Uuid::new_v4(),
             expires_at: Utc::now() + Duration::minutes(10),
@@ -197,13 +201,13 @@ mod tests {
         );
 
         // Validate from currency
-        assert_eq!(retrieved_quote.from.chain, original_quote.from.chain);
-        assert_eq!(retrieved_quote.from.token, original_quote.from.token);
+        assert_eq!(retrieved_quote.from.currency.chain, original_quote.from.currency.chain);
+        assert_eq!(retrieved_quote.from.currency.token, original_quote.from.currency.token);
         assert_eq!(retrieved_quote.from.amount, original_quote.from.amount);
 
         // Validate to currency
-        assert_eq!(retrieved_quote.to.chain, original_quote.to.chain);
-        assert_eq!(retrieved_quote.to.token, original_quote.to.token);
+        assert_eq!(retrieved_quote.to.currency.chain, original_quote.to.currency.chain);
+        assert_eq!(retrieved_quote.to.currency.token, original_quote.to.currency.token);
         assert_eq!(retrieved_quote.to.amount, original_quote.to.amount);
 
         // Validate timestamps (with some tolerance for DB precision)
@@ -232,21 +236,25 @@ mod tests {
         // Create a quote with ERC20 tokens
         let original_quote = Quote {
             id: Uuid::new_v4(),
-            from: Currency {
-                chain: ChainType::Ethereum,
-                token: TokenIdentifier::Address(
-                    "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48".to_string(),
-                ), // USDC
+            from: Lot {
+                currency: Currency {
+                    chain: ChainType::Ethereum,
+                    token: TokenIdentifier::Address(
+                        "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48".to_string(),
+                    ), // USDC
+                    decimals: 6,
+                },
                 amount: U256::from(1000000000u64), // 1000 USDC (6 decimals)
-                decimals: 6,
             },
-            to: Currency {
-                chain: ChainType::Ethereum,
-                token: TokenIdentifier::Address(
-                    "0x6B175474E89094C44Da98b954EedeAC495271d0F".to_string(),
-                ), // DAI
+            to: Lot {
+                currency: Currency {
+                    chain: ChainType::Ethereum,
+                    token: TokenIdentifier::Address(
+                        "0x6B175474E89094C44Da98b954EedeAC495271d0F".to_string(),
+                    ), // DAI
+                    decimals: 18,
+                },
                 amount: U256::from(1000000000000000000000u128), // 1000 DAI (18 decimals)
-                decimals: 18,
             },
             market_maker_id: Uuid::new_v4(),
             expires_at: Utc::now() + Duration::minutes(5),
@@ -258,14 +266,14 @@ mod tests {
         let retrieved_quote = quote_repo.get(original_quote.id).await.unwrap();
 
         // Validate token addresses are preserved
-        match (&retrieved_quote.from.token, &original_quote.from.token) {
+        match (&retrieved_quote.from.currency.token, &original_quote.from.currency.token) {
             (TokenIdentifier::Address(retrieved), TokenIdentifier::Address(original)) => {
                 assert_eq!(retrieved, original);
             }
             _ => panic!("Token identifier type mismatch"),
         }
 
-        match (&retrieved_quote.to.token, &original_quote.to.token) {
+        match (&retrieved_quote.to.currency.token, &original_quote.to.currency.token) {
             (TokenIdentifier::Address(retrieved), TokenIdentifier::Address(original)) => {
                 assert_eq!(retrieved, original);
             }
@@ -290,17 +298,21 @@ mod tests {
 
         let original_quote = Quote {
             id: Uuid::new_v4(),
-            from: Currency {
-                chain: ChainType::Ethereum,
-                token: TokenIdentifier::Native,
+            from: Lot {
+                currency: Currency {
+                    chain: ChainType::Ethereum,
+                    token: TokenIdentifier::Native,
+                    decimals: 18,
+                },
                 amount: large_amount,
-                decimals: 18,
             },
-            to: Currency {
-                chain: ChainType::Bitcoin,
-                token: TokenIdentifier::Native,
+            to: Lot {
+                currency: Currency {
+                    chain: ChainType::Bitcoin,
+                    token: TokenIdentifier::Native,
+                    decimals: 8,
+                },
                 amount: U256::from(21000000u64) * U256::from(100000000u64), // 21M BTC in sats
-                decimals: 8,
             },
             market_maker_id: Uuid::new_v4(),
             expires_at: Utc::now() + Duration::hours(1),
@@ -329,17 +341,21 @@ mod tests {
         // Create multiple quotes - some expired, some active
         let expired_quote = Quote {
             id: Uuid::new_v4(),
-            from: Currency {
-                chain: ChainType::Bitcoin,
-                token: TokenIdentifier::Native,
+            from: Lot {
+                currency: Currency {
+                    chain: ChainType::Bitcoin,
+                    token: TokenIdentifier::Native,
+                    decimals: 8,
+                },
                 amount: U256::from(100000u64),
-                decimals: 8,
             },
-            to: Currency {
-                chain: ChainType::Ethereum,
-                token: TokenIdentifier::Native,
+            to: Lot {
+                currency: Currency {
+                    chain: ChainType::Ethereum,
+                    token: TokenIdentifier::Native,
+                    decimals: 18,
+                },
                 amount: U256::from(1000000000000000000u64),
-                decimals: 18,
             },
             market_maker_id: mm_identifier,
             expires_at: Utc::now() - Duration::hours(1), // Already expired
@@ -348,17 +364,21 @@ mod tests {
 
         let active_quote1 = Quote {
             id: Uuid::new_v4(),
-            from: Currency {
-                chain: ChainType::Bitcoin,
-                token: TokenIdentifier::Native,
+            from: Lot {
+                currency: Currency {
+                    chain: ChainType::Bitcoin,
+                    token: TokenIdentifier::Native,
+                    decimals: 8,
+                },
                 amount: U256::from(200000u64),
-                decimals: 8,
             },
-            to: Currency {
-                chain: ChainType::Ethereum,
-                token: TokenIdentifier::Native,
+            to: Lot {
+                currency: Currency {
+                    chain: ChainType::Ethereum,
+                    token: TokenIdentifier::Native,
+                    decimals: 18,
+                },
                 amount: U256::from(2000000000000000000u64),
-                decimals: 18,
             },
             market_maker_id: mm_identifier,
             expires_at: Utc::now() + Duration::minutes(30),
@@ -367,17 +387,21 @@ mod tests {
 
         let active_quote2 = Quote {
             id: Uuid::new_v4(),
-            from: Currency {
-                chain: ChainType::Ethereum,
-                token: TokenIdentifier::Native,
+            from: Lot {
+                currency: Currency {
+                    chain: ChainType::Ethereum,
+                    token: TokenIdentifier::Native,
+                    decimals: 18,
+                },
                 amount: U256::from(3000000000000000000u64),
-                decimals: 18,
             },
-            to: Currency {
-                chain: ChainType::Bitcoin,
-                token: TokenIdentifier::Native,
+            to: Lot {
+                currency: Currency {
+                    chain: ChainType::Bitcoin,
+                    token: TokenIdentifier::Native,
+                    decimals: 8,
+                },
                 amount: U256::from(300000u64),
-                decimals: 8,
             },
             market_maker_id: mm_identifier,
             expires_at: Utc::now() + Duration::hours(1),

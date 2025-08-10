@@ -7,7 +7,7 @@ use bdk_wallet::{
     signer::SignOptions,
     KeychainKind, PersistedWallet,
 };
-use otc_models::Currency;
+use otc_models::Lot;
 use snafu::Snafu;
 use tokio::sync::{mpsc, oneshot, Mutex, RwLock};
 use tokio::task::JoinSet;
@@ -48,7 +48,7 @@ pub enum TransactionBroadcasterError {
 pub type Result<T, E = TransactionBroadcasterError> = std::result::Result<T, E>;
 
 pub struct TransactionRequest {
-    pub currency: Currency,
+    pub lot: Lot,
     pub to_address: String,
     pub nonce: Option<[u8; 16]>,
     pub response_tx: oneshot::Sender<Result<String>>,
@@ -79,7 +79,7 @@ impl BitcoinTransactionBroadcaster {
                     &esplora_client,
                     network,
                     &last_sync,
-                    request.currency,
+                    request.lot,
                     request.to_address,
                     request.nonce,
                 )
@@ -99,14 +99,14 @@ impl BitcoinTransactionBroadcaster {
 
     pub async fn broadcast_transaction(
         &self,
-        currency: Currency,
+        lot: Lot,
         to_address: String,
         nonce: Option<[u8; 16]>,
     ) -> Result<String> {
         let (response_tx, response_rx) = oneshot::channel();
 
         let request = TransactionRequest {
-            currency,
+            lot,
             to_address,
             nonce,
             response_tx,
@@ -128,7 +128,7 @@ async fn process_transaction(
     esplora_client: &Arc<esplora_client::AsyncClient>,
     network: bitcoin::Network,
     last_sync: &Arc<RwLock<Instant>>,
-    currency: Currency,
+    lot: Lot,
     to_address: String,
     nonce: Option<[u8; 16]>,
 ) -> Result<String> {
@@ -136,7 +136,7 @@ async fn process_transaction(
 
     info!(
         "Processing Bitcoin transaction to {} for {:?}",
-        to_address, currency
+        to_address, lot
     );
 
     // Parse the recipient address
@@ -159,7 +159,7 @@ async fn process_transaction(
 
     // Check balance
     let balance = wallet_guard.balance();
-    let amount_sats = currency.amount.to::<u64>();
+    let amount_sats = lot.amount.to::<u64>();
     let amount = Amount::from_sat(amount_sats);
     info!("balance: {:?}", balance);
 

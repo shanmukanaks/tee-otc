@@ -470,7 +470,7 @@ mod tests {
     use alloy::primitives::U256;
     use chrono::{Duration, Utc};
     use otc_models::{
-        ChainType, Currency, MMDepositStatus, Quote, SettlementStatus, Swap, SwapStatus,
+        ChainType, Currency, Lot, MMDepositStatus, Quote, SettlementStatus, Swap, SwapStatus,
         TokenIdentifier, UserDepositStatus,
     };
     use serde_json;
@@ -485,17 +485,21 @@ mod tests {
         // First create a quote that the swap will reference
         let quote = Quote {
             id: Uuid::new_v4(),
-            from: Currency {
-                chain: ChainType::Bitcoin,
-                token: TokenIdentifier::Native,
+            from: Lot {
+                currency: Currency {
+                    chain: ChainType::Bitcoin,
+                    token: TokenIdentifier::Native,
+                    decimals: 8,
+                },
                 amount: U256::from(1000000u64), // 0.01 BTC
-                decimals: 8,
             },
-            to: Currency {
-                chain: ChainType::Ethereum,
-                token: TokenIdentifier::Native,
+            to: Lot {
+                currency: Currency {
+                    chain: ChainType::Ethereum,
+                    token: TokenIdentifier::Native,
+                    decimals: 18,
+                },
                 amount: U256::from(500000000000000000u64), // 0.5 ETH
-                decimals: 18,
             },
             market_maker_id: Uuid::new_v4(),
             expires_at: Utc::now() + Duration::hours(1),
@@ -574,17 +578,21 @@ mod tests {
         // Create quote
         let quote = Quote {
             id: Uuid::new_v4(),
-            from: Currency {
-                chain: ChainType::Bitcoin,
-                token: TokenIdentifier::Native,
+            from: Lot {
+                currency: Currency {
+                    chain: ChainType::Bitcoin,
+                    token: TokenIdentifier::Native,
+                    decimals: 8,
+                },
                 amount: U256::from(2000000u64),
-                decimals: 8,
             },
-            to: Currency {
-                chain: ChainType::Ethereum,
-                token: TokenIdentifier::Native,
+            to: Lot {
+                currency: Currency {
+                    chain: ChainType::Ethereum,
+                    token: TokenIdentifier::Native,
+                    decimals: 18,
+                },
                 amount: U256::from(1000000000000000000u64),
-                decimals: 18,
             },
             market_maker_id: Uuid::new_v4(),
             expires_at: Utc::now() + Duration::hours(1),
@@ -676,17 +684,21 @@ mod tests {
         // Create quote
         let quote = Quote {
             id: Uuid::new_v4(),
-            from: Currency {
-                chain: ChainType::Bitcoin,
-                token: TokenIdentifier::Native,
+            from: Lot {
+                currency: Currency {
+                    chain: ChainType::Bitcoin,
+                    token: TokenIdentifier::Native,
+                    decimals: 8,
+                },
                 amount: U256::from(1000000u64),
-                decimals: 8,
             },
-            to: Currency {
-                chain: ChainType::Ethereum,
-                token: TokenIdentifier::Native,
+            to: Lot {
+                currency: Currency {
+                    chain: ChainType::Ethereum,
+                    token: TokenIdentifier::Native,
+                    decimals: 18,
+                },
                 amount: U256::from(500000000000000000u64),
-                decimals: 18,
             },
             market_maker_id: Uuid::new_v4(),
             expires_at: Utc::now() + Duration::hours(1),

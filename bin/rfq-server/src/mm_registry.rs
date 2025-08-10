@@ -75,8 +75,8 @@ impl RfqMMRegistry {
     pub async fn broadcast_quote_request(
         &self,
         request_id: Uuid,
-        from: otc_models::Currency,
-        to: otc_models::Currency,
+        from: otc_models::Lot,
+        to: otc_models::Lot,
     ) -> Vec<(Uuid, mpsc::Receiver<RFQResponse>)> {
         let mut receivers = Vec::new();
 

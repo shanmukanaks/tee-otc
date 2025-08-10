@@ -224,6 +224,7 @@ pub fn build_rfq_server_test_args(rfq_port: u16) -> RfqServerArgs {
         log_level: "info".to_string(),
         whitelist_file: get_whitelist_file_path(),
         quote_timeout_milliseconds: 5000,
+        cors_domain: None,
     }
 }
 
@@ -252,6 +253,7 @@ pub fn build_otc_server_test_args(
         esplora_http_server_url: devnet.bitcoin.esplora_url.as_ref().unwrap().to_string(),
         bitcoin_network: bitcoin::network::Network::Regtest,
         chain_monitor_interval_seconds: 2,
+        cors_domain: None,
     }
 }
 

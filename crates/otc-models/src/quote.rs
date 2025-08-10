@@ -15,8 +15,13 @@ pub enum TokenIdentifier {
 pub struct Currency {
     pub chain: ChainType,
     pub token: TokenIdentifier,
-    pub amount: U256,
     pub decimals: u8,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Lot {
+    pub currency: Currency,
+    pub amount: U256,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -27,10 +32,10 @@ pub struct Quote {
     pub market_maker_id: Uuid,
 
     /// The currency the user will send
-    pub from: Currency,
+    pub from: Lot,
 
     /// The currency the user will receive
-    pub to: Currency,
+    pub to: Lot,
 
     /// The expiration time of the quote
     pub expires_at: DateTime<Utc>,

@@ -1,6 +1,6 @@
 use crate::mm_registry::RfqMMRegistry;
 use futures_util::future;
-use otc_models::{Currency, Quote};
+use otc_models::{Currency, Lot, Quote};
 use otc_rfq_protocol::RFQResponse;
 use snafu::Snafu;
 use std::sync::Arc;
@@ -46,14 +46,14 @@ impl QuoteAggregator {
     }
 
     /// Request quotes from all connected market makers and return the best one
-    pub async fn request_quotes(&self, from: Currency, to: Currency) -> Result<QuoteRequestResult> {
+    pub async fn request_quotes(&self, from: Lot, to: Lot) -> Result<QuoteRequestResult> {
         let request_id = Uuid::new_v4();
 
         info!(
             request_id = %request_id,
-            from_chain = ?from.chain,
+            from_chain = ?from.currency.chain,
             from_amount = %from.amount,
-            to_chain = ?to.chain,
+            to_chain = ?to.currency.chain,
             "Starting quote aggregation"
         );
 
@@ -188,18 +188,22 @@ mod tests {
         let registry = Arc::new(RfqMMRegistry::new());
         let aggregator = QuoteAggregator::new(registry, 5);
 
-        let from = Currency {
-            chain: ChainType::Bitcoin,
-            token: TokenIdentifier::Native,
+        let from = Lot {
+            currency: Currency {
+                chain: ChainType::Bitcoin,
+                token: TokenIdentifier::Native,
+                decimals: 8,
+            },
             amount: U256::from(100000000u64), // 1 BTC
-            decimals: 8,
         };
 
-        let to = Currency {
-            chain: ChainType::Ethereum,
-            token: TokenIdentifier::Native,
+        let to = Lot {
+            currency: Currency {
+                chain: ChainType::Ethereum,
+                token: TokenIdentifier::Native,
+                decimals: 18,
+            },
             amount: U256::ZERO,
-            decimals: 18,
         };
 
         let result = aggregator.request_quotes(from, to).await;

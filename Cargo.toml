@@ -5,7 +5,6 @@ members = [
     "crates/*",
     "integration-tests"
 ]
-exclude = ["empty-sqlite-shim"]
 
 [workspace.package]
 edition = "2021"

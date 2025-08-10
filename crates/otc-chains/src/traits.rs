@@ -1,6 +1,6 @@
 use crate::Result;
 use async_trait::async_trait;
-use otc_models::{Currency, TransferInfo, TxStatus, Wallet};
+use otc_models::{Lot, TransferInfo, TxStatus, Wallet};
 use std::time::Duration;
 
 
@@ -18,7 +18,7 @@ pub trait ChainOperations: Send + Sync {
     async fn search_for_transfer(
         &self,
         to_address: &str,
-        currency: &Currency,
+        lot: &Lot,
         // Some callers may require a nonce to be embedded in the transaction
         embedded_nonce: Option<[u8; 16]>,
         // Before this block, the transfer was not possible/irrelevant - can be used to limit the search range

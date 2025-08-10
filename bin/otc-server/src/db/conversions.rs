@@ -1,5 +1,5 @@
 use alloy::primitives::U256;
-use otc_models::{ChainType, TokenIdentifier, Currency, UserDepositStatus, MMDepositStatus, SettlementStatus};
+use otc_models::{ChainType, TokenIdentifier, Currency, Lot, UserDepositStatus, MMDepositStatus, SettlementStatus};
 use serde_json;
 use crate::error::{OtcServerError, OtcServerResult};
 
@@ -42,20 +42,22 @@ pub fn u256_from_db(s: &str) -> OtcServerResult<U256> {
     })
 }
 
-pub fn currency_to_db(currency: &Currency) -> OtcServerResult<(String, serde_json::Value, String, u8)> {
-    let chain = chain_type_to_db(&currency.chain).to_string();
-    let token = token_identifier_to_json(&currency.token)?;
-    let amount = u256_to_db(&currency.amount);
-    let decimals = currency.decimals;
+pub fn lot_to_db(lot: &Lot) -> OtcServerResult<(String, serde_json::Value, String, u8)> {
+    let chain = chain_type_to_db(&lot.currency.chain).to_string();
+    let token = token_identifier_to_json(&lot.currency.token)?;
+    let amount = u256_to_db(&lot.amount);
+    let decimals = lot.currency.decimals;
     Ok((chain, token, amount, decimals))
 }
 
-pub fn currency_from_db(chain: String, token: serde_json::Value, amount: String, decimals: u8) -> OtcServerResult<Currency> {
-    Ok(Currency {
-        chain: chain_type_from_db(&chain)?,
-        token: token_identifier_from_json(token)?,
+pub fn lot_from_db(chain: String, token: serde_json::Value, amount: String, decimals: u8) -> OtcServerResult<Lot> {
+    Ok(Lot {
+        currency: Currency {
+            chain: chain_type_from_db(&chain)?,
+            token: token_identifier_from_json(token)?,
+            decimals,
+        },
         amount: u256_from_db(&amount)?,
-        decimals,
     })
 }
 
@@ -111,22 +113,24 @@ mod tests {
     
 
     #[test]
-    fn test_currency_conversion() {
-        let currency = Currency {
-            chain: ChainType::Bitcoin,
-            token: TokenIdentifier::Native,
+    fn test_lot_conversion() {
+        let lot = Lot {
+            currency: Currency {
+                chain: ChainType::Bitcoin,
+                token: TokenIdentifier::Native,
+                decimals: 8,
+            },
             amount: U256::from(100),
-            decimals: 8,
         };
-        let (chain, token, amount, decimals) = currency_to_db(&currency).unwrap();
+        let (chain, token, amount, decimals) = lot_to_db(&lot).unwrap();
         assert_eq!(chain, "bitcoin");
         assert_eq!(token, serde_json::json!({ "type": "Native" }));
         assert_eq!(amount, "100");
         assert_eq!(decimals, 8);
 
-        let currency2 = currency_from_db(chain, token, amount, decimals).unwrap();
-        assert_eq!(currency2.chain, currency.chain);
-        assert_eq!(currency2.token, currency.token);
-        assert_eq!(currency2.amount, currency.amount); 
+        let lot2 = lot_from_db(chain, token, amount, decimals).unwrap();
+        assert_eq!(lot2.currency.chain, lot.currency.chain);
+        assert_eq!(lot2.currency.token, lot.currency.token);
+        assert_eq!(lot2.amount, lot.amount); 
     }
 }

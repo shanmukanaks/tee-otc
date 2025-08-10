@@ -11,7 +11,7 @@ use bdk_wallet::{
     signer::SignerError,
     CreateParams, KeychainKind, LoadParams, LoadWithPersistError, PersistedWallet,
 };
-use otc_models::{ChainType, Currency, TokenIdentifier};
+use otc_models::{ChainType, Currency, Lot, TokenIdentifier};
 use snafu::{ResultExt, Snafu};
 use tokio::sync::Mutex;
 use tokio::task::JoinSet;
@@ -149,11 +149,11 @@ impl BitcoinWallet {
         })
     }
 
-    async fn check_balance(&self, currency: &Currency) -> Result<bool, BitcoinWalletError> {
+    async fn check_balance(&self, lot: &Lot) -> Result<bool, BitcoinWalletError> {
         let wallet = self.wallet.lock().await;
         let balance = wallet.balance();
 
-        let amount_sats = currency.amount.to::<u64>();
+        let amount_sats = lot.amount.to::<u64>();
         let required_balance = balance_with_buffer(amount_sats);
 
         Ok(balance.total().to_sat() > required_balance)
@@ -164,30 +164,30 @@ impl BitcoinWallet {
 impl WalletTrait for BitcoinWallet {
     async fn create_transaction(
         &self,
-        currency: &Currency,
+        lot: &Lot,
         to_address: &str,
         nonce: Option<[u8; 16]>,
     ) -> wallet::Result<String> {
-        ensure_valid_currency(currency)?;
+        ensure_valid_lot(lot)?;
 
         info!(
             "Queueing Bitcoin transaction to {} for {:?}",
-            to_address, currency
+            to_address, lot
         );
 
         // Send transaction request to the broadcaster
         self.tx_broadcaster
-            .broadcast_transaction(currency.clone(), to_address.to_string(), nonce)
+            .broadcast_transaction(lot.clone(), to_address.to_string(), nonce)
             .await
             .map_err(|e| match e {
                 transaction_broadcaster::TransactionBroadcasterError::InvalidCurrency => {
-                    WalletError::UnsupportedCurrency {
-                        currency: currency.clone(),
+                    WalletError::UnsupportedLot {
+                        lot: lot.clone(),
                     }
                 }
                 transaction_broadcaster::TransactionBroadcasterError::InsufficientBalance => {
                     WalletError::InsufficientBalance {
-                        required: currency.amount.to_string(),
+                        required: lot.amount.to_string(),
                         available: "unknown".to_string(),
                     }
                 }
@@ -200,12 +200,12 @@ impl WalletTrait for BitcoinWallet {
             })
     }
 
-    async fn can_fill(&self, currency: &Currency) -> wallet::Result<bool> {
-        if ensure_valid_currency(currency).is_err() {
+    async fn can_fill(&self, lot: &Lot) -> wallet::Result<bool> {
+        if ensure_valid_lot(lot).is_err() {
             return Ok(false);
         }
 
-        self.check_balance(currency)
+        self.check_balance(lot)
             .await
             .map_err(|e| WalletError::BalanceCheckFailed {
                 reason: e.to_string(),
@@ -213,23 +213,23 @@ impl WalletTrait for BitcoinWallet {
     }
 }
 
-fn ensure_valid_currency(currency: &Currency) -> Result<(), WalletError> {
-    if !matches!(currency.chain, ChainType::Bitcoin)
-        || !matches!(currency.token, TokenIdentifier::Native)
+fn ensure_valid_lot(lot: &Lot) -> Result<(), WalletError> {
+    if !matches!(lot.currency.chain, ChainType::Bitcoin)
+        || !matches!(lot.currency.token, TokenIdentifier::Native)
     {
-        return Err(WalletError::UnsupportedCurrency {
-            currency: currency.clone(),
+        return Err(WalletError::UnsupportedLot {
+            lot: lot.clone(),
         });
     }
 
     // Bitcoin has 8 decimals
-    if currency.decimals != 8 {
-        return Err(WalletError::UnsupportedCurrency {
-            currency: currency.clone(),
+    if lot.currency.decimals != 8 {
+        return Err(WalletError::UnsupportedLot {
+            lot: lot.clone(),
         });
     }
 
-    info!("Bitcoin currency is valid: {:?}", currency);
+    info!("Bitcoin lot is valid: {:?}", lot);
     Ok(())
 }
 

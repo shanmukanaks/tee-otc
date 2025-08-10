@@ -1,6 +1,6 @@
 use alloy::primitives::U256;
 use market_maker::run_market_maker;
-use otc_models::{ChainType, Currency, TokenIdentifier};
+use otc_models::{ChainType, Currency, Lot, TokenIdentifier};
 use rfq_server::server::run_server as run_rfq_server;
 use std::time::{Duration, Instant};
 use tokio::task::JoinSet;
@@ -58,17 +58,21 @@ async fn test_rfq_flow() {
 
     // Now send a quote request
     let quote_request = rfq_server::server::QuoteRequest {
-        from: Currency {
-            chain: ChainType::Bitcoin,
-            token: TokenIdentifier::Native,
+        from: Lot {
+            currency: Currency {
+                chain: ChainType::Bitcoin,
+                token: TokenIdentifier::Native,
+                decimals: 8,
+            },
             amount: from_amount, // 1 BTC
-            decimals: 8,
         },
-        to: Currency {
-            chain: ChainType::Ethereum,
-            token: TokenIdentifier::Native,
+        to: Lot {
+            currency: Currency {
+                chain: ChainType::Ethereum,
+                token: TokenIdentifier::Native,
+                decimals: 18,
+            },
             amount: U256::ZERO, // Will be filled by MM
-            decimals: 18,
         },
     };
 

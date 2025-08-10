@@ -9,7 +9,7 @@ use evm_token_indexer_client::TokenIndexerClient;
 use market_maker::evm_wallet::EVMWallet;
 use market_maker::wallet::Wallet;
 use market_maker::{bitcoin_wallet::BitcoinWallet, run_market_maker, MarketMakerArgs};
-use otc_models::{ChainType, Currency, Quote, TokenIdentifier};
+use otc_models::{ChainType, Currency, Lot, Quote, TokenIdentifier};
 use otc_server::api::SwapResponse;
 use otc_server::{
     api::{CreateSwapRequest, CreateSwapResponse},
@@ -131,19 +131,23 @@ async fn test_swap_from_bitcoin_to_ethereum(
         quote: Quote {
             id: Uuid::new_v4(),
             market_maker_id: mm_uuid,
-            from: Currency {
-                chain: ChainType::Bitcoin,
-                token: TokenIdentifier::Native,
+            from: Lot {
+                currency: Currency {
+                    chain: ChainType::Bitcoin,
+                    token: TokenIdentifier::Native,
+                    decimals: 8,
+                },
                 amount: U256::from(10_000_000), // 0.1 BTC
-                decimals: 8,
             },
-            to: Currency {
-                chain: ChainType::Ethereum,
-                token: TokenIdentifier::Address(
-                    devnet.ethereum.cbbtc_contract.address().to_string(),
-                ),
+            to: Lot {
+                currency: Currency {
+                    chain: ChainType::Ethereum,
+                    token: TokenIdentifier::Address(
+                        devnet.ethereum.cbbtc_contract.address().to_string(),
+                    ),
+                    decimals: 8,
+                },
                 amount: U256::from(9_000_000), // 0.09 cbbtc
-                decimals: 8,
             },
             expires_at: Utc::now() + Duration::from_secs(60 * 60 * 24),
             created_at: Utc::now(),
@@ -175,11 +179,13 @@ async fn test_swap_from_bitcoin_to_ethereum(
     };
     let tx_hash = user_bitcoin_wallet
         .create_transaction(
-            &Currency {
-                chain: ChainType::Bitcoin,
-                token: TokenIdentifier::Native,
+            &Lot {
+                currency: Currency {
+                    chain: ChainType::Bitcoin,
+                    token: TokenIdentifier::Native,
+                    decimals: response_json.decimals,
+                },
                 amount: response_json.expected_amount,
-                decimals: response_json.decimals,
             },
             &response_json.deposit_address,
             None,
@@ -302,19 +308,23 @@ async fn test_swap_from_ethereum_to_bitcoin(
         quote: Quote {
             id: Uuid::new_v4(),
             market_maker_id: mm_uuid,
-            from: Currency {
-                chain: ChainType::Ethereum,
-                token: TokenIdentifier::Address(
-                    devnet.ethereum.cbbtc_contract.address().to_string(),
-                ),
+            from: Lot {
+                currency: Currency {
+                    chain: ChainType::Ethereum,
+                    token: TokenIdentifier::Address(
+                        devnet.ethereum.cbbtc_contract.address().to_string(),
+                    ),
+                    decimals: 8,
+                },
                 amount: U256::from(100_000_000i128), // 1 cbbtc
-                decimals: 8,
             },
-            to: Currency {
-                chain: ChainType::Bitcoin,
-                token: TokenIdentifier::Native,
+            to: Lot {
+                currency: Currency {
+                    chain: ChainType::Bitcoin,
+                    token: TokenIdentifier::Native,
+                    decimals: 8,
+                },
                 amount: U256::from(90_000_000i128), //  0.9 BTC
-                decimals: 8,
             },
             expires_at: Utc::now() + Duration::from_secs(60 * 60 * 24),
             created_at: Utc::now(),
@@ -346,13 +356,15 @@ async fn test_swap_from_ethereum_to_bitcoin(
     };
     let tx_hash = user_ethereum_wallet
         .create_transaction(
-            &Currency {
-                chain: ChainType::Ethereum,
-                token: TokenIdentifier::Address(
-                    devnet.ethereum.cbbtc_contract.address().to_string(),
-                ),
+            &Lot {
+                currency: Currency {
+                    chain: ChainType::Ethereum,
+                    token: TokenIdentifier::Address(
+                        devnet.ethereum.cbbtc_contract.address().to_string(),
+                    ),
+                    decimals: response_json.decimals,
+                },
                 amount: response_json.expected_amount,
-                decimals: response_json.decimals,
             },
             &response_json.deposit_address,
             None,

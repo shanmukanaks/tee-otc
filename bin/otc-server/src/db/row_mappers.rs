@@ -4,7 +4,7 @@ use sqlx::postgres::PgRow;
 use sqlx::Row;
 use uuid::Uuid;
 
-use super::conversions::{currency_from_db, user_deposit_status_from_json, mm_deposit_status_from_json, settlement_status_from_json};
+use super::conversions::{lot_from_db, user_deposit_status_from_json, mm_deposit_status_from_json, settlement_status_from_json};
 use crate::error::{OtcServerError, OtcServerResult};
 
 pub trait FromRow<'r>: Sized {
@@ -26,8 +26,8 @@ impl<'r> FromRow<'r> for Quote {
         let expires_at: DateTime<Utc> = row.try_get("expires_at")?;
         let created_at: DateTime<Utc> = row.try_get("created_at")?;
         
-        let from = currency_from_db(from_chain, from_token, from_amount, from_decimals as u8)?;
-        let to = currency_from_db(to_chain, to_token, to_amount, to_decimals as u8)?;
+        let from = lot_from_db(from_chain, from_token, from_amount, from_decimals as u8)?;
+        let to = lot_from_db(to_chain, to_token, to_amount, to_decimals as u8)?;
         
         Ok(Quote {
             id,
@@ -81,8 +81,8 @@ impl<'r> FromRow<'r> for Swap {
         let expires_at: DateTime<Utc> = row.try_get("expires_at")?;
         let quote_created_at: DateTime<Utc> = row.try_get("quote_created_at")?;
         
-        let from = currency_from_db(from_chain, from_token, from_amount, from_decimals as u8)?;
-        let to = currency_from_db(to_chain, to_token, to_amount, to_decimals as u8)?;
+        let from = lot_from_db(from_chain, from_token, from_amount, from_decimals as u8)?;
+        let to = lot_from_db(to_chain, to_token, to_amount, to_decimals as u8)?;
         
         let quote = Quote {
             id: quote_id,

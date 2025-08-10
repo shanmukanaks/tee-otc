@@ -139,10 +139,10 @@ impl SwapMonitoringService {
         // Get the chain operations for the user's deposit chain (from = user sends)
         let chain_ops =
             self.chain_registry
-                .get(&quote.from.chain)
+                .get(&quote.from.currency.chain)
                 .ok_or(MonitoringError::ChainOperation {
                     source: otc_chains::Error::ChainNotSupported {
-                        chain: format!("{:?}", quote.from.chain),
+                        chain: format!("{:?}", quote.from.currency.chain),
                     },
                 })?;
 
@@ -164,7 +164,7 @@ impl SwapMonitoringService {
         if let Some(deposit) = deposit_info {
             info!(
                 "User deposit detected for swap {}: {} on chain {:?}",
-                swap.id, deposit.tx_hash, quote.from.chain
+                swap.id, deposit.tx_hash, quote.from.currency.chain
             );
 
             // Update swap state
@@ -218,10 +218,10 @@ impl SwapMonitoringService {
         // Get the chain operations for the user's deposit chain
         let chain_ops =
             self.chain_registry
-                .get(&quote.from.chain)
+                .get(&quote.from.currency.chain)
                 .ok_or(MonitoringError::ChainOperation {
                     source: otc_chains::Error::ChainNotSupported {
-                        chain: format!("{:?}", quote.from.chain),
+                        chain: format!("{:?}", quote.from.currency.chain),
                     },
                 })?;
 
@@ -302,10 +302,10 @@ impl SwapMonitoringService {
         // Get the chain operations for the MM's deposit chain (to = MM sends)
         let chain_ops =
             self.chain_registry
-                .get(&quote.to.chain)
+                .get(&quote.to.currency.chain)
                 .ok_or(MonitoringError::ChainOperation {
                     source: otc_chains::Error::ChainNotSupported {
-                        chain: format!("{:?}", quote.to.chain),
+                        chain: format!("{:?}", quote.to.currency.chain),
                     },
                 })?;
 
@@ -323,7 +323,7 @@ impl SwapMonitoringService {
         if let Some(deposit) = deposit_info {
             info!(
                 "MM deposit detected for swap {}: {} on chain {:?}",
-                swap.id, deposit.tx_hash, quote.to.chain
+                swap.id, deposit.tx_hash, quote.to.currency.chain
             );
 
             // Update swap state
@@ -358,10 +358,10 @@ impl SwapMonitoringService {
         // Get the chain operations for the MM's deposit chain
         let chain_ops =
             self.chain_registry
-                .get(&quote.to.chain)
+                .get(&quote.to.currency.chain)
                 .ok_or(MonitoringError::ChainOperation {
                     source: otc_chains::Error::ChainNotSupported {
-                        chain: format!("{:?}", quote.to.chain),
+                        chain: format!("{:?}", quote.to.currency.chain),
                     },
                 })?;
 
@@ -401,10 +401,10 @@ impl SwapMonitoringService {
                         .context(DatabaseSnafu)?;
 
                     // Send private key to MM
-                    let chain_ops = self.chain_registry.get(&quote.from.chain).ok_or(
+                    let chain_ops = self.chain_registry.get(&quote.from.currency.chain).ok_or(
                         MonitoringError::ChainOperation {
                             source: otc_chains::Error::ChainNotSupported {
-                                chain: format!("{:?}", quote.from.chain),
+                                chain: format!("{:?}", quote.from.currency.chain),
                             },
                         },
                     )?;
@@ -418,7 +418,7 @@ impl SwapMonitoringService {
                     let swap_id = swap.id;
                     let private_key = user_wallet.private_key().to_string();
                     let mm_tx_hash = mm_deposit.tx_hash.clone();
-                    let chain = quote.from.chain;
+                    let chain = quote.from.currency.chain;
                     tokio::spawn(async move {
                         let _ = mm_registry
                             .notify_swap_complete(

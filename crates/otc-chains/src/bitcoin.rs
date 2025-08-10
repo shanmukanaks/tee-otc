@@ -5,7 +5,7 @@ use async_trait::async_trait;
 use bitcoin::secp256k1::{Secp256k1, SecretKey};
 use bitcoin::{consensus, Address, Amount, CompressedPublicKey, Network, PrivateKey, Script};
 use bitcoincore_rpc_async::{Auth, Client, RpcApi};
-use otc_models::{ChainType, Currency, TransferInfo, TxStatus, Wallet};
+use otc_models::{ChainType, Lot, TransferInfo, TxStatus, Wallet};
 use std::str::FromStr;
 use std::time::Duration;
 use tracing::{debug, info};
@@ -106,7 +106,7 @@ impl ChainOperations for BitcoinChain {
     async fn search_for_transfer(
         &self,
         address: &str,
-        currency: &Currency,
+        lot: &Lot,
         embedded_nonce: Option<[u8; 16]>,
         _from_block_height: Option<u64>,
     ) -> Result<Option<TransferInfo>> {
@@ -115,16 +115,16 @@ impl ChainOperations for BitcoinChain {
             tracing::Level::DEBUG,
             "search_for_transfer",
             address = address,
-            currency = format!("{:?}", currency),
+            lot = format!("{:?}", lot),
             embedded_nonce = format!("{:?}", embedded_nonce)
         );
         let _enter = span.enter();
 
-        if !matches!(currency.chain, ChainType::Bitcoin)
-            || !matches!(currency.token, otc_models::TokenIdentifier::Native)
+        if !matches!(lot.currency.chain, ChainType::Bitcoin)
+            || !matches!(lot.currency.token, otc_models::TokenIdentifier::Native)
         {
             return Err(crate::Error::InvalidCurrency {
-                currency: currency.clone(),
+                lot: lot.clone(),
                 network: ChainType::Bitcoin,
             });
         }
@@ -132,7 +132,7 @@ impl ChainOperations for BitcoinChain {
         let potential_transfer = self
             .get_transfer_hint(
                 address.to_string().as_str(),
-                &currency.amount,
+                &lot.amount,
                 embedded_nonce,
             )
             .await?;
@@ -171,7 +171,7 @@ impl ChainOperations for BitcoinChain {
                     return Ok(None);
                 }
             }
-            let minimum_amount = currency.amount.to::<u64>();
+            let minimum_amount = lot.amount.to::<u64>();
             let valid_outputs = tx
                 .outputs
                 .iter()

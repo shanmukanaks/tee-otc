@@ -5,7 +5,7 @@ use alloy::signers::local::PrivateKeySigner;
 use alloy::sol;
 use async_trait::async_trait;
 use evm_token_indexer_client::TokenIndexerClient;
-use otc_models::{Currency, TokenIdentifier, TransferInfo, TxStatus, Wallet};
+use otc_models::{Lot, TokenIdentifier, TransferInfo, TxStatus, Wallet};
 use std::str::FromStr;
 use std::time::Duration;
 use tracing::{debug, info};
@@ -107,11 +107,11 @@ impl ChainOperations for EthereumChain {
     async fn search_for_transfer(
         &self,
         address: &str,
-        currency: &Currency,
+        lot: &Lot,
         embedded_nonce: Option<[u8; 16]>,
         _from_block_height: Option<u64>,
     ) -> Result<Option<TransferInfo>> {
-        let token_address = match &currency.token {
+        let token_address = match &lot.currency.token {
             TokenIdentifier::Address(address) => address,
             TokenIdentifier::Native => return Ok(None),
         };
@@ -130,7 +130,7 @@ impl ChainOperations for EthereumChain {
         })?;
 
         let transfer_hint = self
-            .get_transfer(&to_address, &currency.amount, embedded_nonce)
+            .get_transfer(&to_address, &lot.amount, embedded_nonce)
             .await?;
         if transfer_hint.is_none() {
             return Ok(None);

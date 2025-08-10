@@ -1,5 +1,5 @@
 use chrono::Utc;
-use otc_models::{Currency, Quote};
+use otc_models::{Lot, Quote};
 use otc_rfq_protocol::{ProtocolMessage, RFQRequest, RFQResponse};
 use tracing::{info, warn};
 use uuid::Uuid;
@@ -26,7 +26,7 @@ impl RFQMessageHandler {
             } => {
                 info!(
                     "Received RFQ quote request: request_id={}, from_chain={:?}, from_amount={}, to_chain={:?}",
-                    request_id, from.chain, from.amount, to.chain
+                    request_id, from.currency.chain, from.amount, to.currency.chain
                 );
 
                 // Parse market maker ID as UUID
@@ -44,11 +44,9 @@ impl RFQMessageHandler {
                     id: Uuid::new_v4(),
                     market_maker_id: mm_uuid,
                     from: from.clone(),
-                    to: Currency {
-                        chain: to.chain.clone(),
-                        token: to.token.clone(),
+                    to: Lot {
+                        currency: to.currency.clone(),
                         amount: from.amount, // Symmetric for now
-                        decimals: to.decimals,
                     },
                     expires_at: Utc::now() + chrono::Duration::minutes(5),
                     created_at: Utc::now(),

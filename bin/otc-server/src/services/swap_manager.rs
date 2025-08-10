@@ -161,9 +161,9 @@ impl SwapManager {
         // 7. Derive user deposit address for response
         let user_chain =
             self.chain_registry
-                .get(&quote.from.chain)
+                .get(&quote.from.currency.chain)
                 .ok_or(SwapError::ChainNotSupported {
-                    chain: quote.from.chain,
+                    chain: quote.from.currency.chain,
                 })?;
 
         let user_deposit_address = &user_chain
@@ -202,9 +202,9 @@ impl SwapManager {
         // 7. Derive user deposit address for response
         let user_chain =
             self.chain_registry
-                .get(&quote.from.chain)
+                .get(&quote.from.currency.chain)
                 .ok_or(SwapError::ChainNotSupported {
-                    chain: quote.from.chain,
+                    chain: quote.from.currency.chain,
                 })?;
 
         let user_wallet = user_chain
@@ -215,10 +215,10 @@ impl SwapManager {
         Ok(CreateSwapResponse {
             swap_id,
             deposit_address: user_wallet.address.clone(),
-            deposit_chain: format!("{:?}", quote.from.chain),
+            deposit_chain: format!("{:?}", quote.from.currency.chain),
             expected_amount: quote.from.amount,
-            decimals: quote.from.decimals,
-            token: match &quote.from.token {
+            decimals: quote.from.currency.decimals,
+            token: match &quote.from.currency.token {
                 TokenIdentifier::Native => "Native".to_string(),
                 TokenIdentifier::Address(addr) => addr.clone(),
             },
@@ -235,9 +235,9 @@ impl SwapManager {
         // Derive wallet addresses
         let master_key = self.settings.master_key_bytes();
 
-        let user_chain = self.chain_registry.get(&swap.quote.from.chain).ok_or(
+        let user_chain = self.chain_registry.get(&swap.quote.from.currency.chain).ok_or(
             SwapError::ChainNotSupported {
-                chain: swap.quote.from.chain,
+                chain: swap.quote.from.currency.chain,
             },
         )?;
 
@@ -254,10 +254,10 @@ impl SwapManager {
             updated_at: swap.updated_at,
             user_deposit: DepositInfoResponse {
                 address: user_wallet.address.clone(),
-                chain: format!("{:?}", swap.quote.from.chain),
+                chain: format!("{:?}", swap.quote.from.currency.chain),
                 expected_amount: swap.quote.from.amount,
-                decimals: swap.quote.from.decimals,
-                token: match &swap.quote.from.token {
+                decimals: swap.quote.from.currency.decimals,
+                token: match &swap.quote.from.currency.token {
                     TokenIdentifier::Native => "Native".to_string(),
                     TokenIdentifier::Address(addr) => addr.clone(),
                 },
@@ -267,10 +267,10 @@ impl SwapManager {
             },
             mm_deposit: DepositInfoResponse {
                 address: swap.user_destination_address.clone(),
-                chain: format!("{:?}", swap.quote.to.chain),
+                chain: format!("{:?}", swap.quote.to.currency.chain),
                 expected_amount: swap.quote.to.amount,
-                decimals: swap.quote.to.decimals,
-                token: match &swap.quote.to.token {
+                decimals: swap.quote.to.currency.decimals,
+                token: match &swap.quote.to.currency.token {
                     TokenIdentifier::Native => "Native".to_string(),
                     TokenIdentifier::Address(addr) => addr.clone(),
                 },

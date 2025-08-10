@@ -1,5 +1,5 @@
 use chrono::{DateTime, Utc};
-use otc_models::{Currency, Quote};
+use otc_models::{Lot, Quote};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -26,8 +26,8 @@ pub enum RFQRequest {
     /// Broadcast to all MMs when user requests quotes
     QuoteRequest {
         request_id: Uuid,
-        from: Currency,
-        to: Currency,
+        from: Lot,
+        to: Lot,
         timestamp: DateTime<Utc>,
     },
     

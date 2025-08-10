@@ -7,7 +7,7 @@ use market_maker::{
     evm_wallet::{self, EVMWallet},
     wallet::Wallet,
 };
-use otc_models::{ChainType, Currency, TokenIdentifier};
+use otc_models::{ChainType, Currency, Lot, TokenIdentifier};
 use sqlx::{pool::PoolOptions, postgres::PgConnectOptions};
 use std::{sync::Arc, time::Duration};
 use tokio::task::JoinSet;
@@ -97,11 +97,13 @@ async fn test_evm_wallet_nonce_error_retry(
     let mut status_receiver = evm_wallet.tx_broadcaster.subscribe_to_status_updates();
 
     // Create a currency for testing
-    let currency = Currency {
-        chain: ChainType::Ethereum,
-        token: TokenIdentifier::Address(test_token.to_string()),
+    let lot = Lot {
+        currency: Currency {
+            chain: ChainType::Ethereum,
+            token: TokenIdentifier::Address(test_token.to_string()),
+            decimals: 18,
+        },
         amount: U256::from(1000) * U256::pow(U256::from(10), U256::from(18)), // 1000 tokens
-        decimals: 18,
     };
 
     // Test Case 1: Simulate nonce too low error by sending multiple transactions rapidly
@@ -110,10 +112,10 @@ async fn test_evm_wallet_nonce_error_retry(
     let user_address = user_account.ethereum_address.to_string();
 
     // Send the first transaction normally
-    let tx1_future = evm_wallet.create_transaction(&currency, &user_address, None);
+    let tx1_future = evm_wallet.create_transaction(&lot, &user_address, None);
 
     // Immediately send another transaction to create a nonce conflict
-    let tx2_future = evm_wallet.create_transaction(&currency, &user_address, None);
+    let tx2_future = evm_wallet.create_transaction(&lot, &user_address, None);
 
     // Both transactions should eventually succeed due to retry logic
     let (tx1_result, tx2_result) = tokio::join!(tx1_future, tx2_future);
@@ -169,18 +171,20 @@ async fn test_evm_wallet_nonce_error_retry(
     // Test Case 2: Verify balance checking with buffer works correctly
     info!("Test Case 2: Testing balance checking with buffer");
 
-    let can_fill = evm_wallet.can_fill(&currency).await.unwrap();
+    let can_fill = evm_wallet.can_fill(&lot).await.unwrap();
     assert!(can_fill, "Should be able to fill the currency amount");
 
     // Try with an amount that exceeds balance + buffer
-    let large_currency = Currency {
-        chain: ChainType::Ethereum,
-        token: TokenIdentifier::Address(test_token.to_string()),
+    let large_lot = Lot {
+        currency: Currency {
+            chain: ChainType::Ethereum,
+            token: TokenIdentifier::Address(test_token.to_string()),
+            decimals: 18,
+        },
         amount: U256::from(2_000_000) * U256::pow(U256::from(10), U256::from(18)), // 2M tokens (more than funded)
-        decimals: 18,
     };
 
-    let can_fill_large = evm_wallet.can_fill(&large_currency).await.unwrap();
+    let can_fill_large = evm_wallet.can_fill(&large_lot).await.unwrap();
     assert!(
         !can_fill_large,
         "Should not be able to fill amount exceeding balance + buffer"
@@ -191,7 +195,7 @@ async fn test_evm_wallet_nonce_error_retry(
 
     let custom_nonce: [u8; 16] = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16];
     let tx_with_nonce = evm_wallet
-        .create_transaction(&currency, &user_address, Some(custom_nonce))
+        .create_transaction(&lot, &user_address, Some(custom_nonce))
         .await;
 
     assert!(
@@ -275,11 +279,13 @@ async fn test_evm_wallet_gas_price_bumping(
     let mut status_receiver = evm_wallet.tx_broadcaster.subscribe_to_status_updates();
 
     // Create currency
-    let currency = Currency {
-        chain: ChainType::Ethereum,
-        token: TokenIdentifier::Address(test_token.to_string()),
+    let lot = Lot {
+        currency: Currency {
+            chain: ChainType::Ethereum,
+            token: TokenIdentifier::Address(test_token.to_string()),
+            decimals: 18,
+        },
         amount: U256::from(100) * U256::pow(U256::from(10), U256::from(18)),
-        decimals: 18,
     };
 
     // Send a transaction with low gas price first (this would be done by manipulating the provider)
@@ -288,7 +294,7 @@ async fn test_evm_wallet_gas_price_bumping(
 
     let user_address = user_account.ethereum_address.to_string();
     let tx_result = evm_wallet
-        .create_transaction(&currency, &user_address, None)
+        .create_transaction(&lot, &user_address, None)
         .await;
 
     assert!(
@@ -353,28 +359,32 @@ async fn test_evm_wallet_error_handling(
     let evm_wallet = EVMWallet::new(provider.clone(), eth_rpc_url.to_string(), 1, &mut join_set);
 
     // Test 1: Invalid recipient address
-    let invalid_currency = Currency {
-        chain: ChainType::Ethereum,
-        token: TokenIdentifier::Address("0x1234567890123456789012345678901234567890".to_string()),
+    let invalid_lot = Lot {
+        currency: Currency {
+            chain: ChainType::Ethereum,
+            token: TokenIdentifier::Address("0x1234567890123456789012345678901234567890".to_string()),
+            decimals: 18,
+        },
         amount: U256::from(100),
-        decimals: 18,
     };
 
     let result = evm_wallet
-        .create_transaction(&invalid_currency, "invalid_address", None)
+        .create_transaction(&invalid_lot, "invalid_address", None)
         .await;
 
     assert!(result.is_err(), "Should fail with invalid address");
 
     // Test 2: Unsupported chain type
-    let btc_currency = Currency {
-        chain: ChainType::Bitcoin,
-        token: TokenIdentifier::Native,
+    let btc_lot = Lot {
+        currency: Currency {
+            chain: ChainType::Bitcoin,
+            token: TokenIdentifier::Native,
+            decimals: 8,
+        },
         amount: U256::from(100000),
-        decimals: 8,
     };
 
-    let result = evm_wallet.can_fill(&btc_currency).await;
+    let result = evm_wallet.can_fill(&btc_lot).await;
     info!("result: {:?}", result);
     assert_eq!(
         result.unwrap(),

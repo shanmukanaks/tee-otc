@@ -3,7 +3,7 @@ use bitcoin::{Network, PrivateKey};
 use bitcoincore_rpc_async::RpcApi;
 use devnet::{MultichainAccount, RiftDevnet};
 use market_maker::{bitcoin_wallet::BitcoinWallet, wallet::Wallet};
-use otc_models::{ChainType, Currency, TokenIdentifier};
+use otc_models::{ChainType, Currency, Lot, TokenIdentifier};
 use sqlx::{pool::PoolOptions, postgres::PgConnectOptions};
 use std::{str::FromStr, time::Duration};
 use tokio::task::JoinSet;
@@ -75,15 +75,17 @@ async fn test_bitcoin_wallet_basic_operations(
     // Test Case 1: Check that wallet is created and can check balance (even if 0)
     info!("Test Case 1: Testing wallet creation and balance checking");
 
-    let small_currency = Currency {
-        chain: ChainType::Bitcoin,
-        token: TokenIdentifier::Native,
+    let small_lot = Lot {
+        currency: Currency {
+            chain: ChainType::Bitcoin,
+            token: TokenIdentifier::Native,
+            decimals: 8,
+        },
         amount: U256::from(1u64), // 1 satoshi
-        decimals: 8,
     };
 
     // This should return false since wallet has no funds
-    let can_fill_small = bitcoin_wallet.can_fill(&small_currency).await.unwrap();
+    let can_fill_small = bitcoin_wallet.can_fill(&small_lot).await.unwrap();
     info!("Can fill 1 satoshi (unfunded wallet): {}", can_fill_small);
     assert!(
         !can_fill_small,
@@ -93,28 +95,32 @@ async fn test_bitcoin_wallet_basic_operations(
     // Test Case 2: Test with unsupported currency
     info!("Test Case 2: Testing unsupported currency handling");
 
-    let eth_currency = Currency {
-        chain: ChainType::Ethereum,
-        token: TokenIdentifier::Native,
+    let eth_lot = Lot {
+        currency: Currency {
+            chain: ChainType::Ethereum,
+            token: TokenIdentifier::Native,
+            decimals: 18,
+        },
         amount: U256::from(100_000u64),
-        decimals: 18,
     };
 
-    let can_fill_eth = bitcoin_wallet.can_fill(&eth_currency).await.unwrap();
+    let can_fill_eth = bitcoin_wallet.can_fill(&eth_lot).await.unwrap();
     assert!(!can_fill_eth, "Should return false for Ethereum currency");
 
     // Test Case 3: Test error handling for invalid address
     info!("Test Case 3: Testing invalid address handling");
 
-    let btc_currency = Currency {
-        chain: ChainType::Bitcoin,
-        token: TokenIdentifier::Native,
+    let btc_lot = Lot {
+        currency: Currency {
+            chain: ChainType::Bitcoin,
+            token: TokenIdentifier::Native,
+            decimals: 8,
+        },
         amount: U256::from(100_000u64),
-        decimals: 8,
     };
 
     let invalid_tx_result = bitcoin_wallet
-        .create_transaction(&btc_currency, "invalid_bitcoin_address", None)
+        .create_transaction(&btc_lot, "invalid_bitcoin_address", None)
         .await;
 
     assert!(
@@ -139,15 +145,15 @@ async fn test_bitcoin_wallet_basic_operations(
         .unwrap();
 
     let tx_result1 = bitcoin_wallet
-        .create_transaction(&btc_currency, &user_btc_address, None)
+        .create_transaction(&btc_lot, &user_btc_address, None)
         .await;
     let tx_result2 = bitcoin_wallet
-        .create_transaction(&btc_currency, &user_btc_address, None)
+        .create_transaction(&btc_lot, &user_btc_address, None)
         .await;
 
     let mm_nonce = hex!("deadbeefdeadbeefdeadbeefdeadbeef");
     let tx_result3 = bitcoin_wallet
-        .create_transaction(&btc_currency, &user_btc_address, Some(mm_nonce))
+        .create_transaction(&btc_lot, &user_btc_address, Some(mm_nonce))
         .await;
 
     assert!(
@@ -247,28 +253,32 @@ async fn test_bitcoin_wallet_error_handling(
     .unwrap();
 
     // Test 1: Invalid recipient address
-    let currency = Currency {
-        chain: ChainType::Bitcoin,
-        token: TokenIdentifier::Native,
+    let lot = Lot {
+        currency: Currency {
+            chain: ChainType::Bitcoin,
+            token: TokenIdentifier::Native,
+            decimals: 8,
+        },
         amount: U256::from(100_000u64),
-        decimals: 8,
     };
 
     let result = bitcoin_wallet
-        .create_transaction(&currency, "invalid_btc_address", None)
+        .create_transaction(&lot, "invalid_btc_address", None)
         .await;
 
     assert!(result.is_err(), "Should fail with invalid address");
 
     // Test 2: Unsupported chain type
-    let eth_currency = Currency {
-        chain: ChainType::Ethereum,
-        token: TokenIdentifier::Native,
+    let eth_lot = Lot {
+        currency: Currency {
+            chain: ChainType::Ethereum,
+            token: TokenIdentifier::Native,
+            decimals: 18,
+        },
         amount: U256::from(100_000u64),
-        decimals: 18,
     };
 
-    let result = bitcoin_wallet.can_fill(&eth_currency).await;
+    let result = bitcoin_wallet.can_fill(&eth_lot).await;
     assert_eq!(
         result.unwrap(),
         false,
@@ -276,11 +286,13 @@ async fn test_bitcoin_wallet_error_handling(
     );
 
     // Test 3: Wrong number of decimals
-    let wrong_decimals = Currency {
-        chain: ChainType::Bitcoin,
-        token: TokenIdentifier::Native,
+    let wrong_decimals = Lot {
+        currency: Currency {
+            chain: ChainType::Bitcoin,
+            token: TokenIdentifier::Native,
+            decimals: 18, // Bitcoin uses 8, not 18
+        },
         amount: U256::from(100_000u64),
-        decimals: 18, // Bitcoin uses 8, not 18
     };
 
     let result = bitcoin_wallet.can_fill(&wrong_decimals).await;

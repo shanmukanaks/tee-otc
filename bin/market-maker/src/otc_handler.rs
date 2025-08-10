@@ -90,22 +90,22 @@ impl OTCMessageHandler {
                 quote_id,
                 user_destination_address,
                 mm_nonce,
-                expected_currency,
+                expected_lot,
                 ..
             } => {
                 info!(
-                    message = "User deposit confirmed for swap {swap_id}: MM should send {expected_currency:?} to {user_destination_address}",
+                    message = "User deposit confirmed for swap {swap_id}: MM should send {expected_lot:?} to {user_destination_address}",
                     quote_id = quote_id.to_string(),
                 );
 
                 // TODO: We should have additional safety checks here to ensure the user's deposit is valid
                 // instead of trusting the TEE
-                let wallet = self.wallet_manager.get(expected_currency.chain);
+                let wallet = self.wallet_manager.get(expected_lot.currency.chain);
                 let response: MMResponse = {
                     if let Some(wallet) = wallet {
                         let tx_result = wallet
                             .create_transaction(
-                                expected_currency,
+                                expected_lot,
                                 user_destination_address,
                                 Some(*mm_nonce),
                             )
@@ -116,7 +116,7 @@ impl OTCMessageHandler {
                                 request_id: *request_id,
                                 swap_id: *swap_id,
                                 tx_hash: txid,
-                                amount_sent: expected_currency.amount,
+                                amount_sent: expected_lot.amount,
                                 timestamp: Utc::now(),
                             },
                             Err(e) => MMResponse::Error {

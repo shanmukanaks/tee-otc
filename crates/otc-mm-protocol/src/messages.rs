@@ -1,6 +1,6 @@
 use alloy::primitives::U256;
 use chrono::{DateTime, Utc};
-use otc_models::{ChainType, Currency};
+use otc_models::{ChainType, Lot};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -47,7 +47,7 @@ pub enum MMRequest {
         /// The nonce MM must embed in their transaction
         mm_nonce: [u8; 16],
         /// Expected payment details
-        expected_currency: Currency,
+        expected_lot: Lot,
         timestamp: DateTime<Utc>,
     },
 

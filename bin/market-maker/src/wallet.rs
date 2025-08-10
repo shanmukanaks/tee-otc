@@ -1,6 +1,6 @@
 use async_trait::async_trait;
 use dashmap::DashMap;
-use otc_models::{ChainType, Currency};
+use otc_models::{ChainType, Currency, Lot};
 use snafu::Snafu;
 use std::{collections::HashMap, sync::Arc};
 use tokio::sync::oneshot;
@@ -19,8 +19,8 @@ pub enum WalletError {
     #[snafu(display("Balance check failed: {}", reason))]
     BalanceCheckFailed { reason: String },
 
-    #[snafu(display("Unsupported currency: {:?}", currency))]
-    UnsupportedCurrency { currency: Currency },
+    #[snafu(display("Unsupported lot: {:?}", lot))]
+    UnsupportedLot { lot: Lot },
 
     #[snafu(display("Failed to parse address: {}", context))]
     ParseAddressFailed { context: String },
@@ -57,13 +57,13 @@ pub trait Wallet: Send + Sync {
     /// Optional nonce must be embedded in the transaction somehow
     async fn create_transaction(
         &self,
-        currency: &Currency,
+        lot: &Lot,
         to_address: &str,
         nonce: Option<[u8; 16]>,
     ) -> Result<String>;
 
     /// Check if the wallet can fill the specified amount of currency
-    async fn can_fill(&self, currency: &Currency) -> Result<bool>;
+    async fn can_fill(&self, lot: &Lot) -> Result<bool>;
 }
 
 #[derive(Clone)]
@@ -127,14 +127,14 @@ mod tests {
     impl Wallet for MockWallet {
         async fn create_transaction(
             &self,
-            _currency: &Currency,
+            _lot: &Lot,
             _to_address: &str,
             _nonce: Option<[u8; 16]>,
         ) -> Result<String> {
             Ok("mock_txid_123".to_string())
         }
 
-        async fn can_fill(&self, _currency: &Currency) -> Result<bool> {
+        async fn can_fill(&self, _lot: &Lot) -> Result<bool> {
             Ok(self.can_fill_response)
         }
     }
@@ -153,19 +153,21 @@ mod tests {
 
         // Get wallet
         let wallet = manager.get(ChainType::Bitcoin).unwrap();
-        let currency = Currency {
-            chain: ChainType::Bitcoin,
-            token: TokenIdentifier::Native,
+        let lot = Lot {
+            currency: Currency {
+                chain: ChainType::Bitcoin,
+                token: TokenIdentifier::Native,
+                decimals: 8,
+            },
             amount: U256::from(100000),
-            decimals: 8,
         };
 
         // Test wallet methods
-        let can_fill = wallet.can_fill(&currency).await.unwrap();
+        let can_fill = wallet.can_fill(&lot).await.unwrap();
         assert!(can_fill);
 
         let txid = wallet
-            .create_transaction(&currency, "bc1q...", None)
+            .create_transaction(&lot, "bc1q...", None)
             .await
             .unwrap();
         assert_eq!(txid, "mock_txid_123");

@@ -10,7 +10,7 @@ use alloy::{
 };
 use async_trait::async_trait;
 use common::{GenericERC20::GenericERC20Instance, WebsocketWalletProvider};
-use otc_models::{ChainType, Currency, TokenIdentifier};
+use otc_models::{ChainType, Currency, Lot, TokenIdentifier};
 use tokio::task::JoinSet;
 use tracing::info;
 
@@ -47,13 +47,13 @@ impl EVMWallet {
 impl Wallet for EVMWallet {
     async fn create_transaction(
         &self,
-        currency: &Currency,
+        lot: &Lot,
         to_address: &str,
         nonce: Option<[u8; 16]>,
     ) -> wallet::Result<String> {
-        ensure_valid_currency(currency)?;
+        ensure_valid_lot(lot)?;
         let transaction_request =
-            create_evm_transfer_transaction(&self.provider, currency, to_address, nonce)?;
+            create_evm_transfer_transaction(&self.provider, lot, to_address, nonce)?;
 
         let broadcast_result = self
             .tx_broadcaster
@@ -76,13 +76,13 @@ impl Wallet for EVMWallet {
         }
     }
 
-    async fn can_fill(&self, currency: &Currency) -> wallet::Result<bool> {
+    async fn can_fill(&self, lot: &Lot) -> wallet::Result<bool> {
         // TODO: This check should also include a check that we can pay for gas
-        if ensure_valid_currency(currency).is_err() {
+        if ensure_valid_lot(lot).is_err() {
             return Ok(false);
         }
 
-        let token_address = match &currency.token {
+        let token_address = match &lot.currency.token {
             TokenIdentifier::Native => return Ok(false), // native tokens are not supported for now
             TokenIdentifier::Address(address) => {
                 address
@@ -94,7 +94,7 @@ impl Wallet for EVMWallet {
         };
         let balance =
             get_erc20_balance(&self.provider, &token_address, &self.tx_broadcaster.sender).await?;
-        let required_balance = balance_with_buffer(currency.amount);
+        let required_balance = balance_with_buffer(lot.amount);
         Ok(balance > required_balance)
     }
 }
@@ -117,11 +117,11 @@ async fn get_erc20_balance(
 
 fn create_evm_transfer_transaction(
     provider: &Arc<WebsocketWalletProvider>,
-    currency: &Currency,
+    lot: &Lot,
     to_address: &str,
     nonce: Option<[u8; 16]>,
 ) -> Result<TransactionRequest, WalletError> {
-    match &currency.token {
+    match &lot.currency.token {
         TokenIdentifier::Native => unimplemented!(),
         TokenIdentifier::Address(address) => {
             let token_address =
@@ -137,7 +137,7 @@ fn create_evm_transfer_transaction(
                         context: "invalid to address".to_string(),
                     })?;
             let token_contract = GenericERC20Instance::new(token_address, provider);
-            let transfer = token_contract.transfer(to_address, currency.amount);
+            let transfer = token_contract.transfer(to_address, lot.amount);
             let mut transaction_request = transfer.into_transaction_request();
 
             // Add nonce to the end of calldata if provided
@@ -159,18 +159,18 @@ fn create_evm_transfer_transaction(
     }
 }
 
-fn ensure_valid_currency(currency: &Currency) -> Result<(), WalletError> {
-    if !matches!(currency.chain, ChainType::Ethereum)
+fn ensure_valid_lot(lot: &Lot) -> Result<(), WalletError> {
+    if !matches!(lot.currency.chain, ChainType::Ethereum)
         || !otc_models::SUPPORTED_TOKENS_BY_CHAIN
-            .get(&currency.chain)
+            .get(&lot.currency.chain)
             .unwrap()
-            .contains(&currency.token)
+            .contains(&lot.currency.token)
     {
-        return Err(WalletError::UnsupportedCurrency {
-            currency: currency.clone(),
+        return Err(WalletError::UnsupportedLot {
+            lot: lot.clone(),
         });
     }
-    info!("currency is valid: {:?}", currency);
+    info!("lot is valid: {:?}", lot);
     Ok(())
 }
 

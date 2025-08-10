@@ -15,7 +15,7 @@ use axum::{
 use tower_http::cors::{CorsLayer, AllowOrigin};
 use futures_util::{SinkExt, StreamExt};
 use otc_auth::ApiKeyStore;
-use otc_models::{Currency, Quote};
+use otc_models::{Lot, Quote};
 use otc_rfq_protocol::{Connected, ProtocolMessage, RFQRequest, RFQResponse};
 use serde::{Deserialize, Serialize};
 use snafu::ResultExt;
@@ -40,8 +40,8 @@ struct Status {
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct QuoteRequest {
-    pub from: Currency,
-    pub to: Currency,
+    pub from: Lot,
+    pub to: Lot,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -334,9 +334,9 @@ async fn request_quotes(
     Json(request): Json<QuoteRequest>,
 ) -> Result<Json<QuoteResponse>, RfqServerError> {
     info!(
-        from_chain = ?request.from.chain,
+        from_chain = ?request.from.currency.chain,
         from_amount = %request.from.amount,
-        to_chain = ?request.to.chain,
+        to_chain = ?request.to.currency.chain,
         "Received quote request"
     );
 
