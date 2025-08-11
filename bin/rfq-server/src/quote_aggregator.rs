@@ -1,6 +1,6 @@
 use crate::mm_registry::RfqMMRegistry;
 use futures_util::future;
-use otc_models::{Currency, Lot, Quote};
+use otc_models::{Currency, Lot, Quote, QuoteRequest};
 use otc_rfq_protocol::RFQResponse;
 use snafu::Snafu;
 use std::sync::Arc;
@@ -46,21 +46,22 @@ impl QuoteAggregator {
     }
 
     /// Request quotes from all connected market makers and return the best one
-    pub async fn request_quotes(&self, from: Lot, to: Lot) -> Result<QuoteRequestResult> {
+    pub async fn request_quotes(&self, request: QuoteRequest) -> Result<QuoteRequestResult> {
         let request_id = Uuid::new_v4();
 
         info!(
             request_id = %request_id,
-            from_chain = ?from.currency.chain,
-            from_amount = %from.amount,
-            to_chain = ?to.currency.chain,
+            mode = ?request.mode,
+            from_chain = ?request.from.chain,
+            from_amount = %request.amount,
+            to_chain = ?request.to.chain,
             "Starting quote aggregation"
         );
 
         // Broadcast quote request to all connected MMs
         let receivers = self
             .mm_registry
-            .broadcast_quote_request(request_id, from.clone(), to.clone())
+            .broadcast_quote_request(&request_id, &request)
             .await;
 
         if receivers.is_empty() {
@@ -181,32 +182,29 @@ impl QuoteAggregator {
 mod tests {
     use super::*;
     use alloy::primitives::U256;
-    use otc_models::{ChainType, TokenIdentifier};
+    use otc_models::{ChainType, QuoteMode, TokenIdentifier};
 
     #[tokio::test]
     async fn test_no_market_makers() {
         let registry = Arc::new(RfqMMRegistry::new());
         let aggregator = QuoteAggregator::new(registry, 5);
 
-        let from = Lot {
-            currency: Currency {
+        let request = QuoteRequest {
+            mode: QuoteMode::ExactInput,
+            from: Currency {
                 chain: ChainType::Bitcoin,
                 token: TokenIdentifier::Native,
                 decimals: 8,
             },
-            amount: U256::from(100000000u64), // 1 BTC
-        };
-
-        let to = Lot {
-            currency: Currency {
+            to: Currency {
                 chain: ChainType::Ethereum,
                 token: TokenIdentifier::Native,
                 decimals: 18,
             },
-            amount: U256::ZERO,
+            amount: U256::from(100_000u64),
         };
 
-        let result = aggregator.request_quotes(from, to).await;
+        let result = aggregator.request_quotes(request).await;
         assert!(matches!(
             result,
             Err(QuoteAggregatorError::NoMarketMakersConnected)

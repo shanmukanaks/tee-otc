@@ -1,4 +1,5 @@
 use dashmap::DashMap;
+use otc_models::QuoteRequest;
 use otc_rfq_protocol::{ProtocolMessage, RFQRequest, RFQResponse};
 use snafu::Snafu;
 use std::sync::Arc;
@@ -74,9 +75,8 @@ impl RfqMMRegistry {
     /// Broadcast a quote request to all connected market makers
     pub async fn broadcast_quote_request(
         &self,
-        request_id: Uuid,
-        from: otc_models::Lot,
-        to: otc_models::Lot,
+        request_id: &Uuid,
+        request: &QuoteRequest,
     ) -> Vec<(Uuid, mpsc::Receiver<RFQResponse>)> {
         let mut receivers = Vec::new();
 
@@ -94,10 +94,9 @@ impl RfqMMRegistry {
             let request = ProtocolMessage {
                 version: connection.protocol_version.clone(),
                 sequence: 0, // TODO: Implement sequence tracking
-                payload: RFQRequest::QuoteRequest {
+                payload: RFQRequest::QuoteRequested {
                     request_id: mm_request_id, // Use unique ID per MM
-                    from: from.clone(),
-                    to: to.clone(),
+                    request: request.clone(),
                     timestamp: chrono::Utc::now(),
                 },
             };

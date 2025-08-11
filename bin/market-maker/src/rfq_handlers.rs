@@ -1,16 +1,29 @@
 use chrono::Utc;
-use otc_models::{Lot, Quote};
+use otc_models::{Currency, Lot, Quote};
 use otc_rfq_protocol::{ProtocolMessage, RFQRequest, RFQResponse};
-use tracing::{info, warn};
+use tracing::{debug, info, warn};
 use uuid::Uuid;
 
+use crate::price_oracle::PriceOracle;
+
 pub struct RFQMessageHandler {
-    market_maker_id: String,
+    market_maker_id: Uuid,
+    price_oracle: Option<PriceOracle>,
 }
 
 impl RFQMessageHandler {
-    pub fn new(market_maker_id: String) -> Self {
-        Self { market_maker_id }
+    pub fn new(market_maker_id: Uuid) -> Self {
+        Self {
+            market_maker_id,
+            price_oracle: None,
+        }
+    }
+
+    pub fn with_price_oracle(market_maker_id: Uuid, price_oracle: PriceOracle) -> Self {
+        Self {
+            market_maker_id,
+            price_oracle: Some(price_oracle),
+        }
     }
 
     pub async fn handle_request(
@@ -18,35 +31,28 @@ impl RFQMessageHandler {
         msg: &ProtocolMessage<RFQRequest>,
     ) -> Option<ProtocolMessage<RFQResponse>> {
         match &msg.payload {
-            RFQRequest::QuoteRequest {
+            RFQRequest::QuoteRequested {
                 request_id,
-                from,
-                to,
+                request,
                 timestamp: _,
             } => {
                 info!(
-                    "Received RFQ quote request: request_id={}, from_chain={:?}, from_amount={}, to_chain={:?}",
-                    request_id, from.currency.chain, from.amount, to.currency.chain
+                    "Received RFQ quote request: request_id={}, mode={:?}, from_chain={:?}, amount={}, to_chain={:?}",
+                    request_id, request.mode, request.from.chain, request.amount, request.to.chain
                 );
-
-                // Parse market maker ID as UUID
-                let mm_uuid = match Uuid::parse_str(&self.market_maker_id) {
-                    Ok(uuid) => uuid,
-                    Err(e) => {
-                        warn!("Invalid market maker UUID {}: {}", self.market_maker_id, e);
-                        return None;
-                    }
-                };
 
                 // For now, create a symmetric quote (same amount out as in)
                 // This is just for testing the flow
                 let quote = Quote {
                     id: Uuid::new_v4(),
-                    market_maker_id: mm_uuid,
-                    from: from.clone(),
+                    market_maker_id: self.market_maker_id,
+                    from: Lot {
+                        currency: request.from.clone(),
+                        amount: request.amount,
+                    },
                     to: Lot {
-                        currency: to.currency.clone(),
-                        amount: from.amount, // Symmetric for now
+                        currency: request.to.clone(),
+                        amount: request.amount,
                     },
                     expires_at: Utc::now() + chrono::Duration::minutes(5),
                     created_at: Utc::now(),

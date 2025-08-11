@@ -42,6 +42,20 @@ pub struct Quote {
     pub created_at: DateTime<Utc>,
 }
 
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Hash)]
+pub enum QuoteMode {
+    ExactInput,
+    ExactOutput,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct QuoteRequest {
+    pub mode: QuoteMode,
+    pub from: Currency,
+    pub to: Currency,
+    pub amount: U256,
+}
+
 impl Quote {
     pub fn hash(&self) -> [u8; 32] {
         keccak256(serde_json::to_string(self).unwrap().as_bytes()).into()

@@ -3,6 +3,7 @@ mod config;
 pub mod evm_wallet;
 mod otc_client;
 mod otc_handler;
+pub mod price_oracle;
 mod rfq_client;
 mod rfq_handlers;
 mod strategy;
@@ -18,6 +19,7 @@ use otc_models::ChainType;
 use snafu::{prelude::*, ResultExt};
 use tokio::task::JoinSet;
 use tracing::info;
+use uuid::Uuid;
 
 use crate::{bitcoin_wallet::BitcoinWallet, evm_wallet::EVMWallet, wallet::WalletManager};
 
@@ -137,8 +139,14 @@ fn parse_hex_string(s: &str) -> std::result::Result<[u8; 32], String> {
 
 pub async fn run_market_maker(args: MarketMakerArgs) -> Result<()> {
     let mut join_set: JoinSet<Result<()>> = JoinSet::new();
+    let market_maker_id = Uuid::parse_str(&args.market_maker_id).map_err(|e| Error::Config {
+        source: config::ConfigError::InvalidUuid {
+            uuid: args.market_maker_id,
+            error: e,
+        },
+    })?;
 
-    info!("Starting market maker with ID: {}", args.market_maker_id);
+    info!("Starting market maker with ID: {}", market_maker_id);
 
     let mut wallet_manager = WalletManager::new();
     wallet_manager.register(
@@ -172,9 +180,11 @@ pub async fn run_market_maker(args: MarketMakerArgs) -> Result<()> {
         )),
     );
 
+    // let price_oracle = price_oracle::PriceOracle::new(&mut join_set);
+
     let otc_fill_client = otc_client::OtcFillClient::new(
         Config {
-            market_maker_id: args.market_maker_id.clone(),
+            market_maker_id,
             api_key_id: args.api_key_id.clone(),
             api_key: args.api_key.clone(),
             otc_ws_url: args.otc_ws_url.clone(),
@@ -189,7 +199,7 @@ pub async fn run_market_maker(args: MarketMakerArgs) -> Result<()> {
     // Add RFQ client for handling quote requests
     let rfq_client = rfq_client::RfqClient::new(
         Config {
-            market_maker_id: args.market_maker_id,
+            market_maker_id,
             api_key_id: args.api_key_id,
             api_key: args.api_key,
             otc_ws_url: args.otc_ws_url,

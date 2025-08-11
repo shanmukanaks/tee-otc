@@ -1,14 +1,17 @@
 use snafu::prelude::*;
+use uuid::Uuid;
 
 #[derive(Debug, Snafu)]
 pub enum ConfigError {
     #[snafu(display("Invalid URL: {}", url))]
     InvalidUrl { url: String },
+    #[snafu(display("Invalid UUID: {}", uuid))]
+    InvalidUuid { uuid: String, error: uuid::Error },
 }
 
 #[derive(Debug, Clone)]
 pub struct Config {
-    pub market_maker_id: String,
+    pub market_maker_id: Uuid,
     pub api_key_id: String,
     pub api_key: String,
     pub otc_ws_url: String,

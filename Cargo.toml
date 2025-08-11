@@ -49,11 +49,11 @@ chrono = { version = "0.4", features = ["serde"] }
 config = { version = "0.14", features = ["toml"] }
 zeroize = { version = "1.8", features = ["derive"] }
 secrecy = { version = "0.10", features = ["serde"] }
+tokio-tungstenite = { version = "0.24", features = ["native-tls"]}
 getrandom = "0.2"
 toml = "0.8"
 dashmap = "6.1"
 futures-util = "0.3"
-tokio-tungstenite = "0.24"
 url = "2.5"
 argon2 = "0.5"
 rand = "0.8"

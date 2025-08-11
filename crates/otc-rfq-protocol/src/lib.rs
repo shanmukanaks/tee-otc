@@ -1,5 +1,5 @@
 use chrono::{DateTime, Utc};
-use otc_models::{Lot, Quote};
+use otc_models::{Lot, Quote, QuoteRequest};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -24,20 +24,19 @@ pub struct Connected {
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum RFQRequest {
     /// Broadcast to all MMs when user requests quotes
-    QuoteRequest {
+    QuoteRequested {
         request_id: Uuid,
-        from: Lot,
-        to: Lot,
+        request: QuoteRequest,
         timestamp: DateTime<Utc>,
     },
-    
+
     /// Notify winning MM their quote was selected
     QuoteSelected {
         request_id: Uuid,
         quote_id: Uuid,
         timestamp: DateTime<Utc>,
     },
-    
+
     /// Ping for keepalive
     Ping {
         request_id: Uuid,
@@ -55,13 +54,13 @@ pub enum RFQResponse {
         quote: Option<Quote>,
         timestamp: DateTime<Utc>,
     },
-    
+
     /// Pong response
     Pong {
         request_id: Uuid,
         timestamp: DateTime<Utc>,
     },
-    
+
     /// Error response
     Error {
         request_id: Uuid,

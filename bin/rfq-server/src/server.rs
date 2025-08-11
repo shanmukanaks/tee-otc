@@ -2,6 +2,7 @@ use crate::{
     error::RfqServerError, mm_registry::RfqMMRegistry, quote_aggregator::QuoteAggregator, Result,
     RfqServerArgs,
 };
+use alloy::primitives::U256;
 use axum::{
     extract::{
         ws::{Message, WebSocket, WebSocketUpgrade},
@@ -12,15 +13,15 @@ use axum::{
     routing::{get, post},
     Json, Router,
 };
-use tower_http::cors::{CorsLayer, AllowOrigin};
 use futures_util::{SinkExt, StreamExt};
 use otc_auth::ApiKeyStore;
-use otc_models::{Lot, Quote};
+use otc_models::{Currency, Lot, Quote, QuoteRequest};
 use otc_rfq_protocol::{Connected, ProtocolMessage, RFQRequest, RFQResponse};
 use serde::{Deserialize, Serialize};
 use snafu::ResultExt;
 use std::{net::SocketAddr, sync::Arc};
 use tokio::sync::mpsc;
+use tower_http::cors::{AllowOrigin, CorsLayer};
 use tracing::{error, info, warn};
 use uuid::Uuid;
 
@@ -36,12 +37,6 @@ struct Status {
     pub status: String,
     pub version: String,
     pub connected_market_makers: usize,
-}
-
-#[derive(Serialize, Deserialize, Debug)]
-pub struct QuoteRequest {
-    pub from: Lot,
-    pub to: Lot,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -105,14 +100,14 @@ pub async fn run_server(args: RfqServerArgs) -> Result<()> {
             CorsLayer::new()
                 .allow_origin(AllowOrigin::predicate(move |origin, _request_parts| {
                     let origin_str = origin.to_str().unwrap_or("");
-                    
+
                     // Support wildcard patterns
                     if cors_domain.contains('*') {
                         let pattern = cors_domain.replace("*", "");
                         if cors_domain.starts_with('*') {
                             origin_str.ends_with(&pattern)
                         } else if cors_domain.ends_with('*') {
-                            origin_str.starts_with(&pattern[..pattern.len()-1])
+                            origin_str.starts_with(&pattern[..pattern.len() - 1])
                         } else {
                             // Handle middle wildcards like "*.example.*"
                             let parts: Vec<&str> = cors_domain.split('*').collect();
@@ -125,7 +120,7 @@ pub async fn run_server(args: RfqServerArgs) -> Result<()> {
                 .allow_methods(tower_http::cors::Any)
                 .allow_headers(tower_http::cors::Any)
         };
-        
+
         app = app.layer(cors);
         info!("CORS enabled for domain: {}", cors_domain_pattern);
     }
@@ -334,17 +329,14 @@ async fn request_quotes(
     Json(request): Json<QuoteRequest>,
 ) -> Result<Json<QuoteResponse>, RfqServerError> {
     info!(
-        from_chain = ?request.from.currency.chain,
-        from_amount = %request.from.amount,
-        to_chain = ?request.to.currency.chain,
+        from_chain = ?request.from.chain,
+        to_chain = ?request.to.chain,
+        amount = %request.amount,
+        quote_mode = ?request.mode,
         "Received quote request"
     );
 
-    match state
-        .quote_aggregator
-        .request_quotes(request.from, request.to)
-        .await
-    {
+    match state.quote_aggregator.request_quotes(request).await {
         Ok(result) => {
             info!(
                 request_id = %result.request_id,
