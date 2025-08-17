@@ -14,7 +14,7 @@ path = "src/main.rs"
 common = {workspace = true}
 otc-models = { workspace = true }
 otc-mm-protocol = { workspace = true }
-otc-rfq-protocol = { path = "../../crates/otc-rfq-protocol" }
+otc-rfq-protocol = { workspace = true }
 
 alloy = { workspace = true }
 async-trait = { workspace = true }
@@ -34,6 +34,7 @@ url = { workspace = true }
 bdk_wallet = { workspace = true }
 bdk_esplora = { workspace = true }
 sqlx = { workspace = true }
+esplora-client = {workspace=true}
 
 
 

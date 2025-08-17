@@ -9,7 +9,7 @@ use evm_token_indexer_client::TokenIndexerClient;
 use market_maker::evm_wallet::EVMWallet;
 use market_maker::wallet::Wallet;
 use market_maker::{bitcoin_wallet::BitcoinWallet, run_market_maker, MarketMakerArgs};
-use otc_models::{ChainType, Currency, Lot, Quote, TokenIdentifier};
+use otc_models::{ChainType, Currency, Lot, Quote, QuoteMode, QuoteRequest, TokenIdentifier};
 use otc_server::api::SwapResponse;
 use otc_server::{
     api::{CreateSwapRequest, CreateSwapResponse},
@@ -17,16 +17,16 @@ use otc_server::{
     OtcServerArgs,
 };
 use reqwest::StatusCode;
-use sqlx::{pool::PoolOptions, postgres::PgConnectOptions, types::chrono::Utc};
+use sqlx::{pool::PoolOptions, postgres::PgConnectOptions};
 use std::time::Duration;
 use tokio::task::JoinSet;
 use tracing::info;
-use uuid::Uuid;
 
 use crate::utils::{
     build_bitcoin_wallet_descriptor, build_mm_test_args, build_otc_server_test_args,
-    build_test_user_ethereum_wallet, build_tmp_bitcoin_wallet_db_file, get_free_port,
-    wait_for_otc_server_to_be_ready, wait_for_swap_to_be_settled, PgConnectOptionsExt,
+    build_rfq_server_test_args, build_test_user_ethereum_wallet, build_tmp_bitcoin_wallet_db_file,
+    get_free_port, wait_for_market_maker_to_connect_to_rfq_server, wait_for_otc_server_to_be_ready,
+    wait_for_rfq_server_to_be_ready, wait_for_swap_to_be_settled, PgConnectOptionsExt,
 };
 
 #[sqlx::test]
@@ -88,7 +88,7 @@ async fn test_swap_from_bitcoin_to_ethereum(
     let mut service_join_set = JoinSet::new();
 
     let otc_port = get_free_port().await;
-    let otc_args = build_otc_server_test_args(otc_port, &devnet, &connect_options);
+    let otc_args = build_otc_server_test_args(otc_port, &devnet, &connect_options).await;
 
     service_join_set.spawn(async move {
         run_server(otc_args)
@@ -108,14 +108,32 @@ async fn test_swap_from_bitcoin_to_ethereum(
         }
     }
 
-    let rfq_port = get_free_port().await; // Get a dummy RFQ port (not used in this test)
-    let mm_args = build_mm_test_args(otc_port, rfq_port, &market_maker_account, &devnet);
-    let mm_uuid = mm_args.market_maker_id.clone().parse::<Uuid>().unwrap();
+    let rfq_port = get_free_port().await;
+    let rfq_args = build_rfq_server_test_args(rfq_port);
+    service_join_set.spawn(async move {
+        rfq_server::server::run_server(rfq_args)
+            .await
+            .expect("RFQ server should not crash");
+    });
+    
+    wait_for_rfq_server_to_be_ready(rfq_port).await;
+    
+    let mm_args = build_mm_test_args(
+        otc_port,
+        rfq_port,
+        &market_maker_account,
+        &devnet,
+        &connect_options,
+    )
+    .await;
     service_join_set.spawn(async move {
         run_market_maker(mm_args)
             .await
             .expect("Market maker should not crash");
     });
+    
+    wait_for_market_maker_to_connect_to_rfq_server(rfq_port).await;
+    
     devnet
         .bitcoin
         .wait_for_esplora_sync(Duration::from_secs(30))
@@ -123,35 +141,47 @@ async fn test_swap_from_bitcoin_to_ethereum(
         .unwrap();
     // at this point, the user should have a confirmed BTC balance
     // and our market maker should have plenty of cbbtc to fill their order
-    // create a swap request
-
+    
     let client = reqwest::Client::new();
+    
+    // Request a quote from the RFQ server
+    let quote_request = QuoteRequest {
+        mode: QuoteMode::ExactInput,
+        amount: U256::from(10_000_000), // 0.1 BTC
+        from: Currency {
+            chain: ChainType::Bitcoin,
+            token: TokenIdentifier::Native,
+            decimals: 8,
+        },
+        to: Currency {
+            chain: ChainType::Ethereum,
+            token: TokenIdentifier::Address(
+                devnet.ethereum.cbbtc_contract.address().to_string(),
+            ),
+            decimals: 8,
+        },
+    };
+    
+    let quote_response = client
+        .post(format!("http://localhost:{rfq_port}/api/v1/quotes/request"))
+        .json(&quote_request)
+        .send()
+        .await
+        .unwrap();
+    
+    assert_eq!(quote_response.status(), 200, "Quote request should succeed");
+    
+    let quote_response: rfq_server::server::QuoteResponse = quote_response
+        .json()
+        .await
+        .expect("Should be able to parse quote response");
+    
+    let quote = quote_response.quote;
+    info!("Received quote: {:?}", quote);
+    
     // create a swap request
     let swap_request = CreateSwapRequest {
-        quote: Quote {
-            id: Uuid::new_v4(),
-            market_maker_id: mm_uuid,
-            from: Lot {
-                currency: Currency {
-                    chain: ChainType::Bitcoin,
-                    token: TokenIdentifier::Native,
-                    decimals: 8,
-                },
-                amount: U256::from(10_000_000), // 0.1 BTC
-            },
-            to: Lot {
-                currency: Currency {
-                    chain: ChainType::Ethereum,
-                    token: TokenIdentifier::Address(
-                        devnet.ethereum.cbbtc_contract.address().to_string(),
-                    ),
-                    decimals: 8,
-                },
-                amount: U256::from(9_000_000), // 0.09 cbbtc
-            },
-            expires_at: Utc::now() + Duration::from_secs(60 * 60 * 24),
-            created_at: Utc::now(),
-        },
+        quote,
         user_destination_address: user_account.ethereum_address.to_string(),
         user_refund_address: user_account.bitcoin_wallet.address.to_string(),
     };
@@ -265,10 +295,10 @@ async fn test_swap_from_ethereum_to_bitcoin(
     let mut service_join_set = JoinSet::new();
 
     let otc_port = get_free_port().await;
-    let otc_args = build_otc_server_test_args(otc_port, &devnet, &connect_options);
+    let otc_args = build_otc_server_test_args(otc_port, &devnet, &connect_options).await;
 
     service_join_set.spawn(async move {
-        run_server(otc_args)
+        otc_server::server::run_server(otc_args)
             .await
             .expect("OTC server should not crash");
     });
@@ -285,14 +315,32 @@ async fn test_swap_from_ethereum_to_bitcoin(
         }
     }
 
-    let rfq_port = get_free_port().await; // Get a dummy RFQ port (not used in this test)
-    let mm_args = build_mm_test_args(otc_port, rfq_port, &market_maker_account, &devnet);
-    let mm_uuid = mm_args.market_maker_id.clone().parse::<Uuid>().unwrap();
+    let rfq_port = get_free_port().await;
+    let rfq_args = build_rfq_server_test_args(rfq_port);
+    service_join_set.spawn(async move {
+        rfq_server::server::run_server(rfq_args)
+            .await
+            .expect("RFQ server should not crash");
+    });
+    
+    wait_for_rfq_server_to_be_ready(rfq_port).await;
+
+    let mm_args = build_mm_test_args(
+        otc_port,
+        rfq_port,
+        &market_maker_account,
+        &devnet,
+        &connect_options,
+    )
+    .await;
     service_join_set.spawn(async move {
         run_market_maker(mm_args)
             .await
             .expect("Market maker should not crash");
     });
+    
+    wait_for_market_maker_to_connect_to_rfq_server(rfq_port).await;
+    
     devnet
         .bitcoin
         .wait_for_esplora_sync(Duration::from_secs(30))
@@ -300,35 +348,47 @@ async fn test_swap_from_ethereum_to_bitcoin(
         .unwrap();
     // at this point, the user should have a confirmed BTC balance
     // and our market maker should have plenty of cbbtc to fill their order
-    // create a swap request
-
+    
     let client = reqwest::Client::new();
+    
+    // Request a quote from the RFQ server
+    let quote_request = QuoteRequest {
+        mode: QuoteMode::ExactInput,
+        amount: U256::from(100_000_000i128), // 1 cbbtc
+        from: Currency {
+            chain: ChainType::Ethereum,
+            token: TokenIdentifier::Address(
+                devnet.ethereum.cbbtc_contract.address().to_string(),
+            ),
+            decimals: 8,
+        },
+        to: Currency {
+            chain: ChainType::Bitcoin,
+            token: TokenIdentifier::Native,
+            decimals: 8,
+        },
+    };
+    
+    let quote_response = client
+        .post(format!("http://localhost:{rfq_port}/api/v1/quotes/request"))
+        .json(&quote_request)
+        .send()
+        .await
+        .unwrap();
+    
+    assert_eq!(quote_response.status(), 200, "Quote request should succeed");
+    
+    let quote_response: rfq_server::server::QuoteResponse = quote_response
+        .json()
+        .await
+        .expect("Should be able to parse quote response");
+    
+    let quote = quote_response.quote;
+    info!("Received quote: {:?}", quote);
+    
     // create a swap request
     let swap_request = CreateSwapRequest {
-        quote: Quote {
-            id: Uuid::new_v4(),
-            market_maker_id: mm_uuid,
-            from: Lot {
-                currency: Currency {
-                    chain: ChainType::Ethereum,
-                    token: TokenIdentifier::Address(
-                        devnet.ethereum.cbbtc_contract.address().to_string(),
-                    ),
-                    decimals: 8,
-                },
-                amount: U256::from(100_000_000i128), // 1 cbbtc
-            },
-            to: Lot {
-                currency: Currency {
-                    chain: ChainType::Bitcoin,
-                    token: TokenIdentifier::Native,
-                    decimals: 8,
-                },
-                amount: U256::from(90_000_000i128), //  0.9 BTC
-            },
-            expires_at: Utc::now() + Duration::from_secs(60 * 60 * 24),
-            created_at: Utc::now(),
-        },
+        quote,
         user_destination_address: user_account.bitcoin_wallet.address.to_string(),
         user_refund_address: user_account.ethereum_address.to_string(),
     };

@@ -85,11 +85,11 @@ impl Wallet for EVMWallet {
         let token_address = match &lot.currency.token {
             TokenIdentifier::Native => return Ok(false), // native tokens are not supported for now
             TokenIdentifier::Address(address) => {
-                address
-                    .parse::<Address>()
-                    .map_err(|_| WalletError::ParseAddressFailed {
-                        context: "invalid token address".to_string(),
-                    })?
+                let res = address.parse::<Address>();
+                if res.is_err() {
+                    return Ok(false);
+                }
+                res.unwrap()
             }
         };
         let balance =
@@ -166,9 +166,7 @@ fn ensure_valid_lot(lot: &Lot) -> Result<(), WalletError> {
             .unwrap()
             .contains(&lot.currency.token)
     {
-        return Err(WalletError::UnsupportedLot {
-            lot: lot.clone(),
-        });
+        return Err(WalletError::UnsupportedLot { lot: lot.clone() });
     }
     info!("lot is valid: {:?}", lot);
     Ok(())

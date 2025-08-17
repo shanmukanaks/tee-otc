@@ -23,3 +23,6 @@ mod rfq_flow_test;
 
 #[cfg(test)]
 mod price_oracle_test;
+
+#[cfg(test)]
+mod quote_storage_test;

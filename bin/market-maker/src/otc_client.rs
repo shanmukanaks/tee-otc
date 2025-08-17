@@ -1,8 +1,10 @@
 use crate::otc_handler::OTCMessageHandler;
+use crate::quote_storage::QuoteStorage;
 use crate::{config::Config, wallet::WalletManager};
 use futures_util::{SinkExt, StreamExt};
 use otc_mm_protocol::{MMRequest, ProtocolMessage};
 use snafu::prelude::*;
+use std::sync::Arc;
 use tokio::time::{sleep, Duration};
 use tokio_tungstenite::{
     connect_async_with_config,
@@ -45,8 +47,12 @@ pub struct OtcFillClient {
 }
 
 impl OtcFillClient {
-    pub fn new(config: Config, wallet_manager: WalletManager) -> Self {
-        let handler = OTCMessageHandler::new(config.clone(), wallet_manager);
+    pub fn new(
+        config: Config,
+        wallet_manager: WalletManager,
+        quote_storage: Arc<QuoteStorage>,
+    ) -> Self {
+        let handler = OTCMessageHandler::new(config.clone(), wallet_manager, quote_storage);
         Self { config, handler }
     }
 

@@ -1,8 +1,10 @@
-use crate::config::Config;
-use crate::rfq_handlers::RFQMessageHandler;
+use crate::quote_storage::QuoteStorage;
+use crate::rfq_handler::RFQMessageHandler;
+use crate::{config::Config, wrapped_bitcoin_quoter::WrappedBitcoinQuoter};
 use futures_util::{SinkExt, StreamExt};
 use otc_rfq_protocol::{ProtocolMessage, RFQRequest};
 use snafu::prelude::*;
+use std::sync::Arc;
 use tokio::time::{sleep, Duration};
 use tokio_tungstenite::{
     connect_async_with_config,
@@ -42,8 +44,17 @@ pub struct RfqClient {
 }
 
 impl RfqClient {
-    pub fn new(config: Config, rfq_ws_url: String) -> Self {
-        let handler = RFQMessageHandler::new(config.market_maker_id.clone());
+    pub fn new(
+        config: Config,
+        rfq_ws_url: String,
+        wrapped_bitcoin_quoter: WrappedBitcoinQuoter,
+        quote_storage: Arc<QuoteStorage>,
+    ) -> Self {
+        let handler = RFQMessageHandler::new(
+            config.market_maker_id.clone(),
+            wrapped_bitcoin_quoter,
+            quote_storage,
+        );
         Self {
             config,
             handler,

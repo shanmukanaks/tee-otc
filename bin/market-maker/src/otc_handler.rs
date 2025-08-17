@@ -1,22 +1,30 @@
+use crate::quote_storage::QuoteStorage;
 use crate::strategy::ValidationStrategy;
 use crate::{config::Config, wallet::WalletManager};
 use chrono::Utc;
 use otc_mm_protocol::{MMErrorCode, MMRequest, MMResponse, MMStatus, ProtocolMessage};
-use tracing::{info, warn};
+use std::sync::Arc;
+use tracing::{error, info, warn};
 
 pub struct OTCMessageHandler {
     config: Config,
     strategy: ValidationStrategy,
     wallet_manager: WalletManager,
+    quote_storage: Arc<QuoteStorage>,
 }
 
 impl OTCMessageHandler {
-    pub fn new(config: Config, wallet_manager: WalletManager) -> Self {
-        let strategy = ValidationStrategy::new(config.auto_accept);
+    pub fn new(
+        config: Config,
+        wallet_manager: WalletManager,
+        quote_storage: Arc<QuoteStorage>,
+    ) -> Self {
+        let strategy = ValidationStrategy::new();
         Self {
             config,
             strategy,
             wallet_manager,
+            quote_storage,
         }
     }
 
@@ -37,9 +45,29 @@ impl OTCMessageHandler {
                     quote_id, user_destination_address
                 );
 
-                let (accepted, rejection_reason) =
+                // Verify the quote exists in our database
+                let quote_exists = match self.quote_storage.get_quote(*quote_id).await {
+                    Ok(quote) => {
+                        info!("Found quote {} in database, hash: {:?}", quote_id, quote.hash());
+                        // Verify the hash matches
+                        if quote.hash() != *quote_hash {
+                            warn!("Quote {} hash mismatch! Expected: {:?}, Got: {:?}", 
+                                  quote_id, quote.hash(), quote_hash);
+                        }
+                        true
+                    },
+                    Err(e) => {
+                        error!("Failed to retrieve quote {} from database: {}", quote_id, e);
+                        false
+                    }
+                };
+
+                let (accepted, rejection_reason) = if quote_exists {
                     self.strategy
-                        .validate_quote(quote_id, quote_hash, user_destination_address);
+                        .validate_quote(quote_id, quote_hash, user_destination_address)
+                } else {
+                    (false, Some("Quote not found in database".to_string()))
+                };
 
                 info!(
                     "Quote {} validation result: accepted={}, reason={:?}",

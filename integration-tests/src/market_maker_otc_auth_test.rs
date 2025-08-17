@@ -27,7 +27,7 @@ async fn test_market_maker_otc_auth(
 
     let mut join_set = JoinSet::new();
     let otc_port = get_free_port().await;
-    let otc_args = build_otc_server_test_args(otc_port, &devnet, &connect_options);
+    let otc_args = build_otc_server_test_args(otc_port, &devnet, &connect_options).await;
 
     join_set.spawn(async move {
         run_server(otc_args)
@@ -38,7 +38,15 @@ async fn test_market_maker_otc_auth(
     wait_for_otc_server_to_be_ready(otc_port).await;
 
     let rfq_port = get_free_port().await; // Get a dummy RFQ port (not used in this test)
-    let mm_args = build_mm_test_args(otc_port, rfq_port, &market_maker_account, &devnet);
+    let mm_args = build_mm_test_args(
+        otc_port,
+        rfq_port,
+        &market_maker_account,
+        &devnet,
+        &connect_options,
+    )
+    .await;
+
     join_set.spawn(async move {
         run_market_maker(mm_args)
             .await

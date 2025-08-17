@@ -1,5 +1,5 @@
-use std::sync::Arc;
 use std::time::Duration;
+use std::{sync::Arc, time::Instant};
 
 use futures_util::{SinkExt, StreamExt};
 use serde::{Deserialize, Serialize};
@@ -27,6 +27,9 @@ pub enum PriceOracleError {
 
     #[snafu(display("No price data available"))]
     NoPriceData,
+
+    #[snafu(display("Connection timed out"))]
+    ConnectionTimedOut,
 }
 
 pub type Result<T, E = PriceOracleError> = std::result::Result<T, E>;
@@ -56,19 +59,19 @@ struct CoinbaseTickerMessage {
 }
 
 #[derive(Debug, Clone)]
-pub struct PriceOracle {
-    inner: Arc<PriceOracleInner>,
+pub struct BitcoinEtherPriceOracle {
+    inner: Arc<BitcoinEtherPriceOracleInner>,
 }
 
 #[derive(Debug)]
-struct PriceOracleInner {
+struct BitcoinEtherPriceOracleInner {
     btc_per_eth: RwLock<Option<f64>>,
 }
 
-impl PriceOracle {
+impl BitcoinEtherPriceOracle {
     pub fn new(join_set: &mut JoinSet<crate::Result<()>>) -> Self {
         let oracle = Self {
-            inner: Arc::new(PriceOracleInner {
+            inner: Arc::new(BitcoinEtherPriceOracleInner {
                 btc_per_eth: RwLock::new(None),
             }),
         };
@@ -86,16 +89,22 @@ impl PriceOracle {
         oracle
     }
 
-    pub async fn wait_for_connection(&self) -> Result<()> {
+    async fn wait_for_connection(&self) -> Result<()> {
+        let start_time = Instant::now();
+        let timeout = Duration::from_secs(5);
         loop {
             if self.inner.btc_per_eth.read().await.is_some() {
                 return Ok(());
+            }
+            if start_time.elapsed() > timeout {
+                return Err(PriceOracleError::ConnectionTimedOut);
             }
             tokio::time::sleep(Duration::from_millis(100)).await;
         }
     }
 
     pub async fn get_btc_per_eth(&self) -> Result<f64> {
+        self.wait_for_connection().await?;
         self.inner
             .btc_per_eth
             .read()

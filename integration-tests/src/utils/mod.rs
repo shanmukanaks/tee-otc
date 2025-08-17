@@ -12,7 +12,10 @@ use devnet::MultichainAccount;
 use market_maker::{evm_wallet::EVMWallet, MarketMakerArgs};
 use otc_server::{api::SwapResponse, OtcServerArgs};
 use rfq_server::RfqServerArgs;
-use sqlx::postgres::PgConnectOptions;
+use sqlx::{
+    postgres::{PgConnectOptions, PgPoolOptions},
+    Connection, PgConnection, Pool, Postgres,
+};
 use tokio::{net::TcpListener, task::JoinSet};
 use tracing::info;
 use tracing_subscriber::EnvFilter;
@@ -190,20 +193,22 @@ pub fn build_bitcoin_wallet_descriptor(private_key: &bitcoin::PrivateKey) -> Str
 pub fn build_tmp_bitcoin_wallet_db_file() -> String {
     format!("/tmp/bitcoin_wallet_{}.db", uuid::Uuid::new_v4())
 }
+// TODO:
 
-pub fn build_mm_test_args(
+pub async fn build_mm_test_args(
     otc_port: u16,
     rfq_port: u16,
     multichain_account: &MultichainAccount,
     devnet: &devnet::RiftDevnet,
+    connect_options: &PgConnectOptions,
 ) -> MarketMakerArgs {
+    let db_url = create_test_database(connect_options).await.unwrap();
     MarketMakerArgs {
         market_maker_id: TEST_MARKET_MAKER_ID.to_string(),
         api_key_id: TEST_API_KEY_ID.to_string(),
         api_key: TEST_API_KEY.to_string(),
         otc_ws_url: format!("ws://127.0.0.1:{otc_port}/ws/mm"),
         rfq_ws_url: format!("ws://127.0.0.1:{rfq_port}/ws/mm"),
-        auto_accept: true,
         log_level: "info".to_string(),
         bitcoin_wallet_db_file: build_tmp_bitcoin_wallet_db_file(),
         bitcoin_wallet_descriptor: build_bitcoin_wallet_descriptor(
@@ -214,7 +219,25 @@ pub fn build_mm_test_args(
         ethereum_wallet_private_key: multichain_account.secret_bytes,
         ethereum_confirmations: 1,
         ethereum_rpc_ws_url: devnet.ethereum.anvil.ws_endpoint(),
+        trade_spread_bps: 0,
+        fee_safety_multiplier: 1.5,
+        database_url: db_url,
     }
+}
+
+pub async fn create_test_database(connect_options: &PgConnectOptions) -> sqlx::Result<String> {
+    let mut admin =
+        PgConnection::connect_with(&connect_options.clone().database("postgres")).await?;
+
+    let db = format!("test_db_{}", Uuid::new_v4().simple());
+
+    sqlx::query(&format!("CREATE DATABASE {db}"))
+        .execute(&mut admin)
+        .await?;
+
+    let db_url = connect_options.clone().database(&db).to_database_url();
+
+    Ok(db_url)
 }
 
 pub fn build_rfq_server_test_args(rfq_port: u16) -> RfqServerArgs {
@@ -228,14 +251,15 @@ pub fn build_rfq_server_test_args(rfq_port: u16) -> RfqServerArgs {
     }
 }
 
-pub fn build_otc_server_test_args(
+pub async fn build_otc_server_test_args(
     otc_port: u16,
     devnet: &devnet::RiftDevnet,
     connect_options: &PgConnectOptions,
 ) -> OtcServerArgs {
+    let db_url = create_test_database(connect_options).await.unwrap();
     OtcServerArgs {
         port: otc_port,
-        database_url: connect_options.to_database_url(),
+        database_url: db_url,
         whitelist_file: get_whitelist_file_path(),
         host: IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)),
         log_level: "debug".to_string(),
@@ -281,10 +305,9 @@ fn init_test_tracing() {
     let has_nocapture = std::env::args().any(|arg| arg == "--nocapture" || arg == "--show-output");
     if has_nocapture {
         tracing_subscriber::fmt()
-            .with_env_filter(
-                EnvFilter::try_from_default_env()
-                    .unwrap_or_else(|_| EnvFilter::new("info,otc_server=debug,otc_chains=debug")),
-            )
+            .with_env_filter(EnvFilter::try_from_default_env().unwrap_or_else(|_| {
+                EnvFilter::new("info,otc_server=debug,otc_chains=debug,market-maker=debug")
+            }))
             .try_init()
             .ok();
     }

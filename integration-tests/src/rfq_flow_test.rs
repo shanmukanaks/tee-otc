@@ -2,6 +2,7 @@ use alloy::primitives::U256;
 use market_maker::run_market_maker;
 use otc_models::{ChainType, Currency, Lot, QuoteRequest, TokenIdentifier};
 use rfq_server::server::run_server as run_rfq_server;
+use sqlx::{pool::PoolOptions, postgres::PgConnectOptions};
 use std::time::{Duration, Instant};
 use tokio::task::JoinSet;
 
@@ -11,8 +12,8 @@ use crate::utils::{
     INTEGRATION_TEST_TIMEOUT_SECS, TEST_MARKET_MAKER_ID,
 };
 
-#[tokio::test]
-async fn test_rfq_flow() {
+#[sqlx::test]
+async fn test_rfq_flow(_: PoolOptions<sqlx::Postgres>, connect_options: PgConnectOptions) {
     // Setup market maker account
     let market_maker_account = devnet::MultichainAccount::new(0);
     let devnet = devnet::RiftDevnet::builder()
@@ -43,7 +44,14 @@ async fn test_rfq_flow() {
     wait_for_rfq_server_to_be_ready(rfq_port).await;
 
     // Start market maker
-    let mm_args = build_mm_test_args(otc_port, rfq_port, &market_maker_account, &devnet);
+    let mm_args = build_mm_test_args(
+        otc_port,
+        rfq_port,
+        &market_maker_account,
+        &devnet,
+        &connect_options,
+    )
+    .await;
     join_set.spawn(async move {
         run_market_maker(mm_args)
             .await
@@ -54,21 +62,20 @@ async fn test_rfq_flow() {
     wait_for_market_maker_to_connect_to_rfq_server(rfq_port).await;
 
     let from_amount = U256::from(100000000u64);
-    let expected_to_amount = U256::from(100000000u64);
 
     // Now send a quote request
     let quote_request = QuoteRequest {
-        mode: otc_models::QuoteMode::ExactInput,
+        mode: otc_models::QuoteMode::ExactOutput,
         amount: from_amount,
         from: Currency {
-            chain: ChainType::Bitcoin,
-            token: TokenIdentifier::Native,
+            chain: ChainType::Ethereum,
+            token: TokenIdentifier::Address(devnet.ethereum.cbbtc_contract.address().to_string()),
             decimals: 8,
         },
         to: Currency {
-            chain: ChainType::Ethereum,
+            chain: ChainType::Bitcoin,
             token: TokenIdentifier::Native,
-            decimals: 18,
+            decimals: 8,
         },
     };
 
@@ -107,20 +114,11 @@ async fn test_rfq_flow() {
 
     // Verify the quote details
     let quote = &quote_response.quote;
+    println!("Quote: {:?}", quote);
     assert_eq!(
         quote.market_maker_id.to_string(),
         TEST_MARKET_MAKER_ID,
         "Quote should be from our test market maker"
-    );
-
-    // Verify the amounts (MM currently returns symmetric quote)
-    assert_eq!(
-        quote.from.amount, from_amount,
-        "From amount should match request"
-    );
-    assert_eq!(
-        quote.to.amount, expected_to_amount,
-        "To amount should be symmetric (for now)"
     );
 
     // Output the latency to get the quote

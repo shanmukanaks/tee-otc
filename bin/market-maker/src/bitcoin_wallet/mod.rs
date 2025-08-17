@@ -181,9 +181,7 @@ impl WalletTrait for BitcoinWallet {
             .await
             .map_err(|e| match e {
                 transaction_broadcaster::TransactionBroadcasterError::InvalidCurrency => {
-                    WalletError::UnsupportedLot {
-                        lot: lot.clone(),
-                    }
+                    WalletError::UnsupportedLot { lot: lot.clone() }
                 }
                 transaction_broadcaster::TransactionBroadcasterError::InsufficientBalance => {
                     WalletError::InsufficientBalance {
@@ -217,16 +215,12 @@ fn ensure_valid_lot(lot: &Lot) -> Result<(), WalletError> {
     if !matches!(lot.currency.chain, ChainType::Bitcoin)
         || !matches!(lot.currency.token, TokenIdentifier::Native)
     {
-        return Err(WalletError::UnsupportedLot {
-            lot: lot.clone(),
-        });
+        return Err(WalletError::UnsupportedLot { lot: lot.clone() });
     }
 
     // Bitcoin has 8 decimals
     if lot.currency.decimals != 8 {
-        return Err(WalletError::UnsupportedLot {
-            lot: lot.clone(),
-        });
+        return Err(WalletError::UnsupportedLot { lot: lot.clone() });
     }
 
     info!("Bitcoin lot is valid: {:?}", lot);

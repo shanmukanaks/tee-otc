@@ -4,13 +4,16 @@ pub mod evm_wallet;
 mod otc_client;
 mod otc_handler;
 pub mod price_oracle;
+pub mod quote_storage;
 mod rfq_client;
-mod rfq_handlers;
+mod rfq_handler;
 mod strategy;
 pub mod wallet;
+mod wrapped_bitcoin_quoter;
 
 use std::sync::Arc;
 
+use alloy::providers::Provider;
 use bdk_wallet::bitcoin;
 use clap::Parser;
 use common::{create_websocket_wallet_provider, handle_background_thread_result};
@@ -21,7 +24,10 @@ use tokio::task::JoinSet;
 use tracing::info;
 use uuid::Uuid;
 
-use crate::{bitcoin_wallet::BitcoinWallet, evm_wallet::EVMWallet, wallet::WalletManager};
+use crate::{
+    bitcoin_wallet::BitcoinWallet, evm_wallet::EVMWallet, quote_storage::QuoteStorage,
+    wallet::WalletManager, wrapped_bitcoin_quoter::WrappedBitcoinQuoter,
+};
 
 #[derive(Debug, Snafu)]
 pub enum Error {
@@ -42,9 +48,17 @@ pub enum Error {
     #[snafu(display("Provider error: {}", source))]
     Provider { source: common::ProviderError },
 
+    #[snafu(display("Esplora client error: {}", source))]
+    EsploraInitialization { source: esplora_client::Error },
+
     #[snafu(display("Background thread error: {}", source))]
     BackgroundThread {
         source: Box<dyn std::error::Error + Send + Sync>,
+    },
+
+    #[snafu(display("Quote storage error: {}", source))]
+    QuoteStorage {
+        source: quote_storage::QuoteStorageError,
     },
 }
 
@@ -120,13 +134,21 @@ pub struct MarketMakerArgs {
     #[arg(long, env = "ETHEREUM_RPC_WS_URL")]
     pub ethereum_rpc_ws_url: String,
 
-    /// Auto-accept all quotes (for testing)
-    #[arg(long, env = "AUTO_ACCEPT", default_value = "false")]
-    pub auto_accept: bool,
+    /// Trade spread in basis points
+    #[arg(long, env = "TRADE_SPREAD_BPS", default_value = "0")]
+    pub trade_spread_bps: u64,
+
+    /// Fee safety multiplier, by default 1.5x
+    #[arg(long, env = "FEE_SAFETY_MULTIPLIER", default_value = "1.5")]
+    pub fee_safety_multiplier: f64,
 
     /// Log level
     #[arg(long, env = "RUST_LOG", default_value = "info")]
     pub log_level: String,
+
+    /// Database URL for quote storage
+    #[arg(long, env = "MM_DATABASE_URL")]
+    pub database_url: String,
 }
 
 fn parse_hex_string(s: &str) -> std::result::Result<[u8; 32], String> {
@@ -148,6 +170,17 @@ pub async fn run_market_maker(args: MarketMakerArgs) -> Result<()> {
 
     info!("Starting market maker with ID: {}", market_maker_id);
 
+    // Initialize quote storage
+    let quote_storage = Arc::new(
+        QuoteStorage::new(&args.database_url, &mut join_set)
+            .await
+            .context(QuoteStorageSnafu)?,
+    );
+
+    let esplora_client = esplora_client::Builder::new(&args.bitcoin_wallet_esplora_url)
+        .build_async()
+        .context(EsploraInitializationSnafu)?;
+
     let mut wallet_manager = WalletManager::new();
     wallet_manager.register(
         ChainType::Bitcoin,
@@ -164,23 +197,32 @@ pub async fn run_market_maker(args: MarketMakerArgs) -> Result<()> {
         ),
     );
 
-    let provider = create_websocket_wallet_provider(
-        &args.ethereum_rpc_ws_url,
-        args.ethereum_wallet_private_key,
-    )
-    .await?;
+    let provider = Arc::new(
+        create_websocket_wallet_provider(
+            &args.ethereum_rpc_ws_url,
+            args.ethereum_wallet_private_key,
+        )
+        .await?,
+    );
 
     wallet_manager.register(
         ChainType::Ethereum,
         Arc::new(EVMWallet::new(
-            Arc::new(provider),
+            provider.clone(),
             args.ethereum_rpc_ws_url,
             args.ethereum_confirmations,
             &mut join_set,
         )),
     );
+    let btc_eth_price_oracle = price_oracle::BitcoinEtherPriceOracle::new(&mut join_set);
 
-    // let price_oracle = price_oracle::PriceOracle::new(&mut join_set);
+    let wrapped_bitcoin_quoter = WrappedBitcoinQuoter::new(
+        btc_eth_price_oracle,
+        esplora_client,
+        provider.clone().erased(),
+        args.trade_spread_bps,
+        args.fee_safety_multiplier,
+    );
 
     let otc_fill_client = otc_client::OtcFillClient::new(
         Config {
@@ -188,11 +230,11 @@ pub async fn run_market_maker(args: MarketMakerArgs) -> Result<()> {
             api_key_id: args.api_key_id.clone(),
             api_key: args.api_key.clone(),
             otc_ws_url: args.otc_ws_url.clone(),
-            auto_accept: args.auto_accept,
             reconnect_interval_secs: 5,
             max_reconnect_attempts: 5,
         },
         wallet_manager,
+        quote_storage.clone(),
     );
     join_set.spawn(async move { otc_fill_client.run().await.map_err(Error::from) });
 
@@ -203,11 +245,12 @@ pub async fn run_market_maker(args: MarketMakerArgs) -> Result<()> {
             api_key_id: args.api_key_id,
             api_key: args.api_key,
             otc_ws_url: args.otc_ws_url,
-            auto_accept: args.auto_accept,
             reconnect_interval_secs: 5,
             max_reconnect_attempts: 5,
         },
         args.rfq_ws_url,
+        wrapped_bitcoin_quoter,
+        quote_storage,
     );
     join_set.spawn(async move {
         rfq_client.run().await.map_err(|e| Error::Client {

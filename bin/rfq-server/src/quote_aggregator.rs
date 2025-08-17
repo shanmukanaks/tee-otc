@@ -1,6 +1,6 @@
 use crate::mm_registry::RfqMMRegistry;
 use futures_util::future;
-use otc_models::{Currency, Lot, Quote, QuoteRequest};
+use otc_models::{Quote, QuoteMode, QuoteRequest};
 use otc_rfq_protocol::RFQResponse;
 use snafu::Snafu;
 use std::sync::Arc;
@@ -102,10 +102,16 @@ impl QuoteAggregator {
         );
 
         // Select the best quote (highest output amount)
-        let best_quote = quotes
-            .into_iter()
-            .max_by_key(|q| q.to.amount)
-            .expect("quotes vector is not empty");
+        let best_quote = match request.mode {
+            QuoteMode::ExactInput => quotes
+                .into_iter()
+                .max_by_key(|q| q.to.amount)
+                .expect("quotes vector is not empty"),
+            QuoteMode::ExactOutput => quotes
+                .into_iter()
+                .max_by_key(|q| q.from.amount)
+                .expect("quotes vector is not empty"),
+        };
 
         // Notify the winning market maker
         if let Err(e) = self
@@ -182,6 +188,7 @@ impl QuoteAggregator {
 mod tests {
     use super::*;
     use alloy::primitives::U256;
+    use otc_models::Currency;
     use otc_models::{ChainType, QuoteMode, TokenIdentifier};
 
     #[tokio::test]

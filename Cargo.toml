@@ -18,6 +18,7 @@ repository = "https://github.com/riftresearch/tee-otc"
 otc-models = { path = "crates/otc-models" }
 otc-chains = { path = "crates/otc-chains" }
 otc-mm-protocol = { path = "crates/otc-mm-protocol" }
+otc-rfq-protocol = { path = "crates/otc-rfq-protocol" }
 rfq-server = {path = "bin/rfq-server"}
 common = { path = "crates/common" }
 devnet = { path = "crates/devnet" }
