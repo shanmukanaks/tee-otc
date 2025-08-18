@@ -101,7 +101,6 @@ impl<'r> FromRow<'r> for Swap {
 
         let user_deposit_address: String = row.try_get("user_deposit_address")?;
         let user_destination_address: String = row.try_get("user_destination_address")?;
-        let user_refund_address: String = row.try_get("user_refund_address")?;
         let status: SwapStatus = row.try_get("status")?;
 
         // Handle JSONB fields

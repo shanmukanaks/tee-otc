@@ -85,7 +85,7 @@ impl SwapRepository {
             SELECT 
                 s.id, s.quote_id, s.market_maker_id,
                 s.user_deposit_salt, s.user_deposit_address, s.mm_nonce,
-                s.user_destination_address, s.user_refund_address,
+                s.user_destination_address, s.user_evm_account_address,
                 s.status,
                 s.user_deposit_status, s.mm_deposit_status, s.settlement_status,
                 s.failure_reason, s.failure_at,
@@ -201,7 +201,7 @@ impl SwapRepository {
             SELECT 
                 s.id, s.quote_id, s.market_maker_id,
                 s.user_deposit_salt, s.user_deposit_address, s.mm_nonce,
-                s.user_destination_address, s.user_refund_address,
+                s.user_destination_address, s.user_evm_account_address,
                 s.status,
                 s.user_deposit_status, s.mm_deposit_status, s.settlement_status,
                 s.failure_reason, s.failure_at,
@@ -284,7 +284,7 @@ impl SwapRepository {
             SELECT 
                 s.id, s.quote_id, s.market_maker_id,
                 s.user_deposit_salt, s.user_deposit_address, s.mm_nonce,
-                s.user_destination_address, s.user_refund_address,
+                s.user_destination_address, s.user_evm_account_address,
                 s.status,
                 s.user_deposit_status, s.mm_deposit_status, s.settlement_status,
                 s.failure_reason, s.failure_at,
