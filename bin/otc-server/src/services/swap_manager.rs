@@ -3,10 +3,13 @@ use crate::config::Settings;
 use crate::db::Database;
 use crate::error::OtcServerError;
 use crate::services::MMRegistry;
+use alloy::hex::FromHexError;
+use alloy::primitives::Address;
 use chrono::Utc;
 use otc_chains::ChainRegistry;
 use otc_models::{Swap, SwapStatus, TokenIdentifier};
 use snafu::prelude::*;
+use std::str::FromStr;
 use std::sync::Arc;
 use tokio::sync::oneshot;
 use tokio::time::{timeout, Duration};
@@ -40,6 +43,9 @@ pub enum SwapError {
 
     #[snafu(display("Failed to derive wallet: {}", source))]
     WalletDerivation { source: otc_chains::Error },
+
+    #[snafu(display("Invalid EVM account address: {}", source))]
+    InvalidEvmAccountAddress { source: FromHexError },
 }
 
 impl From<OtcServerError> for SwapError {
@@ -159,12 +165,11 @@ impl SwapManager {
         getrandom::getrandom(&mut user_deposit_salt).expect("Failed to generate random salt");
         getrandom::getrandom(&mut mm_nonce).expect("Failed to generate random nonce");
         // 7. Derive user deposit address for response
-        let user_chain =
-            self.chain_registry
-                .get(&quote.from.currency.chain)
-                .ok_or(SwapError::ChainNotSupported {
-                    chain: quote.from.currency.chain,
-                })?;
+        let user_chain = self.chain_registry.get(&quote.from.currency.chain).ok_or(
+            SwapError::ChainNotSupported {
+                chain: quote.from.currency.chain,
+            },
+        )?;
 
         let user_deposit_address = &user_chain
             .derive_wallet(&self.settings.master_key_bytes(), &user_deposit_salt)
@@ -181,7 +186,7 @@ impl SwapManager {
             user_deposit_address: user_deposit_address.clone(),
             mm_nonce,
             user_destination_address: request.user_destination_address,
-            user_refund_address: request.user_refund_address,
+            user_evm_account_address: request.user_evm_account_address,
             status: SwapStatus::WaitingUserDepositInitiated,
             user_deposit_status: None,
             mm_deposit_status: None,
@@ -200,12 +205,11 @@ impl SwapManager {
         info!("Created swap {} for quote {}", swap_id, quote.id);
 
         // 7. Derive user deposit address for response
-        let user_chain =
-            self.chain_registry
-                .get(&quote.from.currency.chain)
-                .ok_or(SwapError::ChainNotSupported {
-                    chain: quote.from.currency.chain,
-                })?;
+        let user_chain = self.chain_registry.get(&quote.from.currency.chain).ok_or(
+            SwapError::ChainNotSupported {
+                chain: quote.from.currency.chain,
+            },
+        )?;
 
         let user_wallet = user_chain
             .derive_wallet(&self.settings.master_key_bytes(), &user_deposit_salt)
@@ -235,11 +239,12 @@ impl SwapManager {
         // Derive wallet addresses
         let master_key = self.settings.master_key_bytes();
 
-        let user_chain = self.chain_registry.get(&swap.quote.from.currency.chain).ok_or(
-            SwapError::ChainNotSupported {
+        let user_chain = self
+            .chain_registry
+            .get(&swap.quote.from.currency.chain)
+            .ok_or(SwapError::ChainNotSupported {
                 chain: swap.quote.from.currency.chain,
-            },
-        )?;
+            })?;
 
         let user_wallet = user_chain
             .derive_wallet(&master_key, &swap.user_deposit_salt)

@@ -42,7 +42,7 @@ impl SwapRepository {
             INSERT INTO swaps (
                 id, quote_id, market_maker_id,
                 user_deposit_salt, user_deposit_address, mm_nonce,
-                user_destination_address, user_refund_address,
+                user_destination_address, user_evm_account_address,
                 status,
                 user_deposit_status, mm_deposit_status, settlement_status,
                 failure_reason, failure_at,
@@ -62,7 +62,7 @@ impl SwapRepository {
         .bind(&swap.user_deposit_address)
         .bind(&swap.mm_nonce[..])
         .bind(&swap.user_destination_address)
-        .bind(&swap.user_refund_address)
+        .bind(**swap.user_evm_account_address)
         .bind(swap.status)
         .bind(user_deposit_json)
         .bind(mm_deposit_json)
@@ -521,7 +521,9 @@ mod tests {
             user_deposit_address: "bc1qxy2kgdygjrsqtzq2n0yrf2493p83kkfjhx0wlh".to_string(),
             mm_nonce,
             user_destination_address: "0x1234567890123456789012345678901234567890".to_string(),
-            user_refund_address: "bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4".to_string(),
+            user_evm_account_address: "0x1234567890123456789012345678901234567890"
+                .parse()
+                .unwrap(),
             status: SwapStatus::WaitingUserDepositInitiated,
             user_deposit_status: None,
             mm_deposit_status: None,
@@ -561,8 +563,8 @@ mod tests {
             original_swap.user_destination_address
         );
         assert_eq!(
-            retrieved_swap.user_refund_address,
-            original_swap.user_refund_address
+            retrieved_swap.user_evm_account_address,
+            original_swap.user_evm_account_address
         );
         assert_eq!(retrieved_swap.status, original_swap.status);
 
@@ -615,8 +617,9 @@ mod tests {
             user_deposit_address: "bc1qnahvmnz8vgsdmrr68l5mfr8v8q9fxqz3n5d9u0".to_string(),
             mm_nonce,
             user_destination_address: "0x9876543210987654321098765432109876543210".to_string(),
-            user_refund_address: "bc1qrp33g0q5c5txsp9arysrx4k6zdkfs4nce4xj0gdcccefvpysxf3qccfmv3"
-                .to_string(),
+            user_evm_account_address: "0x1234567890123456789012345678901234567890"
+                .parse()
+                .unwrap(),
             status: SwapStatus::WaitingMMDepositConfirmed,
             user_deposit_status: Some(UserDepositStatus {
                 tx_hash: "7d865e959b2466918c9863afca942d0fb89d7c9ac0c99bafc3749504ded97730"
@@ -720,7 +723,9 @@ mod tests {
             user_deposit_address: "bc1qxy2kgdygjrsqtzq2n0yrf2493p83kkfjhx0wlh".to_string(),
             mm_nonce,
             user_destination_address: "0xabcdef1234567890abcdef1234567890abcdef12".to_string(),
-            user_refund_address: "bc1qnahvmnz8vgsdmrr68l5mfr8v8q9fxqz3n5d9u0".to_string(),
+            user_evm_account_address: "0x1234567890123456789012345678901234567890"
+                .parse()
+                .unwrap(),
             status: SwapStatus::WaitingUserDepositInitiated,
             user_deposit_status: None,
             mm_deposit_status: None,

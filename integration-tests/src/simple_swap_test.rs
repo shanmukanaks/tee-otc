@@ -115,9 +115,9 @@ async fn test_swap_from_bitcoin_to_ethereum(
             .await
             .expect("RFQ server should not crash");
     });
-    
+
     wait_for_rfq_server_to_be_ready(rfq_port).await;
-    
+
     let mm_args = build_mm_test_args(
         otc_port,
         rfq_port,
@@ -131,9 +131,9 @@ async fn test_swap_from_bitcoin_to_ethereum(
             .await
             .expect("Market maker should not crash");
     });
-    
+
     wait_for_market_maker_to_connect_to_rfq_server(rfq_port).await;
-    
+
     devnet
         .bitcoin
         .wait_for_esplora_sync(Duration::from_secs(30))
@@ -141,9 +141,9 @@ async fn test_swap_from_bitcoin_to_ethereum(
         .unwrap();
     // at this point, the user should have a confirmed BTC balance
     // and our market maker should have plenty of cbbtc to fill their order
-    
+
     let client = reqwest::Client::new();
-    
+
     // Request a quote from the RFQ server
     let quote_request = QuoteRequest {
         mode: QuoteMode::ExactInput,
@@ -155,35 +155,33 @@ async fn test_swap_from_bitcoin_to_ethereum(
         },
         to: Currency {
             chain: ChainType::Ethereum,
-            token: TokenIdentifier::Address(
-                devnet.ethereum.cbbtc_contract.address().to_string(),
-            ),
+            token: TokenIdentifier::Address(devnet.ethereum.cbbtc_contract.address().to_string()),
             decimals: 8,
         },
     };
-    
+
     let quote_response = client
         .post(format!("http://localhost:{rfq_port}/api/v1/quotes/request"))
         .json(&quote_request)
         .send()
         .await
         .unwrap();
-    
+
     assert_eq!(quote_response.status(), 200, "Quote request should succeed");
-    
+
     let quote_response: rfq_server::server::QuoteResponse = quote_response
         .json()
         .await
         .expect("Should be able to parse quote response");
-    
+
     let quote = quote_response.quote;
     info!("Received quote: {:?}", quote);
-    
+
     // create a swap request
     let swap_request = CreateSwapRequest {
         quote,
         user_destination_address: user_account.ethereum_address.to_string(),
-        user_refund_address: user_account.bitcoin_wallet.address.to_string(),
+        user_evm_account_address: user_account.ethereum_address,
     };
 
     let response = client
@@ -322,7 +320,7 @@ async fn test_swap_from_ethereum_to_bitcoin(
             .await
             .expect("RFQ server should not crash");
     });
-    
+
     wait_for_rfq_server_to_be_ready(rfq_port).await;
 
     let mm_args = build_mm_test_args(
@@ -338,9 +336,9 @@ async fn test_swap_from_ethereum_to_bitcoin(
             .await
             .expect("Market maker should not crash");
     });
-    
+
     wait_for_market_maker_to_connect_to_rfq_server(rfq_port).await;
-    
+
     devnet
         .bitcoin
         .wait_for_esplora_sync(Duration::from_secs(30))
@@ -348,18 +346,16 @@ async fn test_swap_from_ethereum_to_bitcoin(
         .unwrap();
     // at this point, the user should have a confirmed BTC balance
     // and our market maker should have plenty of cbbtc to fill their order
-    
+
     let client = reqwest::Client::new();
-    
+
     // Request a quote from the RFQ server
     let quote_request = QuoteRequest {
         mode: QuoteMode::ExactInput,
         amount: U256::from(100_000_000i128), // 1 cbbtc
         from: Currency {
             chain: ChainType::Ethereum,
-            token: TokenIdentifier::Address(
-                devnet.ethereum.cbbtc_contract.address().to_string(),
-            ),
+            token: TokenIdentifier::Address(devnet.ethereum.cbbtc_contract.address().to_string()),
             decimals: 8,
         },
         to: Currency {
@@ -368,29 +364,29 @@ async fn test_swap_from_ethereum_to_bitcoin(
             decimals: 8,
         },
     };
-    
+
     let quote_response = client
         .post(format!("http://localhost:{rfq_port}/api/v1/quotes/request"))
         .json(&quote_request)
         .send()
         .await
         .unwrap();
-    
+
     assert_eq!(quote_response.status(), 200, "Quote request should succeed");
-    
+
     let quote_response: rfq_server::server::QuoteResponse = quote_response
         .json()
         .await
         .expect("Should be able to parse quote response");
-    
+
     let quote = quote_response.quote;
     info!("Received quote: {:?}", quote);
-    
+
     // create a swap request
     let swap_request = CreateSwapRequest {
         quote,
         user_destination_address: user_account.bitcoin_wallet.address.to_string(),
-        user_refund_address: user_account.ethereum_address.to_string(),
+        user_evm_account_address: user_account.ethereum_address,
     };
 
     let response = client

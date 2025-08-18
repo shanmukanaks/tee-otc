@@ -5,7 +5,6 @@ use crate::{
     services::{MMRegistry, SwapManager, SwapMonitoringService},
     OtcServerArgs, Result,
 };
-use otc_auth::ApiKeyStore;
 use axum::{
     extract::{
         ws::{Message, WebSocket, WebSocketUpgrade},
@@ -16,14 +15,15 @@ use axum::{
     routing::{get, post, Router},
     Json,
 };
-use tower_http::cors::{CorsLayer, AllowOrigin};
 use futures_util::{SinkExt, StreamExt};
+use otc_auth::ApiKeyStore;
 use otc_chains::{bitcoin::BitcoinChain, ethereum::EthereumChain, ChainRegistry};
 use otc_mm_protocol::{Connected, MMRequest, MMResponse, ProtocolMessage};
 use serde::{Deserialize, Serialize};
 use snafu::prelude::*;
 use std::{net::SocketAddr, sync::Arc};
 use tokio::{sync::mpsc, time::Duration};
+use tower_http::cors::{AllowOrigin, CorsLayer};
 use tracing::{error, info};
 use uuid::Uuid;
 
@@ -158,14 +158,14 @@ pub async fn run_server(args: OtcServerArgs) -> Result<()> {
             CorsLayer::new()
                 .allow_origin(AllowOrigin::predicate(move |origin, _request_parts| {
                     let origin_str = origin.to_str().unwrap_or("");
-                    
+
                     // Support wildcard patterns
                     if cors_domain.contains('*') {
                         let pattern = cors_domain.replace("*", "");
                         if cors_domain.starts_with('*') {
                             origin_str.ends_with(&pattern)
                         } else if cors_domain.ends_with('*') {
-                            origin_str.starts_with(&pattern[..pattern.len()-1])
+                            origin_str.starts_with(&pattern[..pattern.len() - 1])
                         } else {
                             // Handle middle wildcards like "*.example.*"
                             let parts: Vec<&str> = cors_domain.split('*').collect();
@@ -178,7 +178,7 @@ pub async fn run_server(args: OtcServerArgs) -> Result<()> {
                 .allow_methods(tower_http::cors::Any)
                 .allow_headers(tower_http::cors::Any)
         };
-        
+
         app = app.layer(cors);
         info!("CORS enabled for domain: {}", cors_domain_pattern);
     }
@@ -293,6 +293,7 @@ async fn create_swap(
         .create_swap(request)
         .await
         .map(Json)
+        // TODO: Impl a cleaner way to map these errors
         .map_err(|e| match e {
             crate::services::swap_manager::SwapError::QuoteNotFound { .. } => {
                 crate::error::OtcServerError::NotFound
@@ -329,6 +330,11 @@ async fn create_swap(
             }
             crate::services::swap_manager::SwapError::WalletDerivation { .. } => {
                 crate::error::OtcServerError::Internal {
+                    message: e.to_string(),
+                }
+            }
+            crate::services::swap_manager::SwapError::InvalidEvmAccountAddress { .. } => {
+                crate::error::OtcServerError::BadRequest {
                     message: e.to_string(),
                 }
             }

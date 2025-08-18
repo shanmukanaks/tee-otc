@@ -1,4 +1,4 @@
-use alloy::primitives::U256;
+use alloy::primitives::{Address, U256};
 use chrono::{DateTime, Utc};
 use otc_models::Quote;
 use serde::{Deserialize, Serialize};
@@ -13,8 +13,8 @@ pub struct CreateSwapRequest {
     /// User's destination address for receiving funds
     pub user_destination_address: String,
 
-    /// User's refund address in case swap needs to be reversed
-    pub user_refund_address: String,
+    /// User's EVM account that is authorized to control the swap
+    pub user_evm_account_address: Address,
 }
 
 /// Response after successfully creating a swap

@@ -1,5 +1,5 @@
 use crate::{Quote, SwapStatus};
-use alloy::primitives::U256;
+use alloy::primitives::{Address, U256};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
@@ -10,36 +10,36 @@ pub struct Swap {
     pub market_maker_id: Uuid,
 
     pub quote: Quote,
-    
+
     // Salt for deterministic wallet generation when combined with the TEE master key
     pub user_deposit_salt: [u8; 32],
     pub user_deposit_address: String, // cached for convenience, can be derived from the salt and master key
 
     // Nonce for the market maker to embed in their payment address
     pub mm_nonce: [u8; 16],
-    
+
     // User's addresses
     pub user_destination_address: String,
-    pub user_refund_address: String,
-    
+    pub user_evm_account_address: Address,
+
     // Core status
     pub status: SwapStatus,
-    
+
     // Deposit tracking (JSONB in database)
     pub user_deposit_status: Option<UserDepositStatus>,
     pub mm_deposit_status: Option<MMDepositStatus>,
-    
+
     // Settlement tracking
     pub settlement_status: Option<SettlementStatus>,
-    
+
     // Failure/timeout tracking
     pub failure_reason: Option<String>,
     pub failure_at: Option<DateTime<Utc>>,
-    
+
     // MM coordination
     pub mm_notified_at: Option<DateTime<Utc>>,
     pub mm_private_key_sent_at: Option<DateTime<Utc>>,
-    
+
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
