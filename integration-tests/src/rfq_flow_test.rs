@@ -1,6 +1,7 @@
 use alloy::primitives::U256;
 use market_maker::run_market_maker;
 use otc_models::{ChainType, Currency, Lot, QuoteRequest, TokenIdentifier};
+use otc_rfq_protocol::RFQResult;
 use rfq_server::server::run_server as run_rfq_server;
 use sqlx::{pool::PoolOptions, postgres::PgConnectOptions};
 use std::time::{Duration, Instant};
@@ -115,11 +116,18 @@ async fn test_rfq_flow(_: PoolOptions<sqlx::Postgres>, connect_options: PgConnec
     // Verify the quote details
     let quote = &quote_response.quote;
     println!("Quote: {:?}", quote);
-    assert_eq!(
-        quote.market_maker_id.to_string(),
-        TEST_MARKET_MAKER_ID,
-        "Quote should be from our test market maker"
-    );
+
+    assert!(quote.is_some(), "Quote should be present");
+    match quote.as_ref().unwrap() {
+        RFQResult::Success(quote) => {
+            assert_eq!(
+                quote.quote.market_maker_id.to_string(),
+                TEST_MARKET_MAKER_ID,
+                "Quote should be from our test market maker"
+            );
+        }
+        _ => panic!("Quote should be a success"),
+    }
 
     // Output the latency to get the quote
     tracing::info!("Quote request latency: {:?}", latency);

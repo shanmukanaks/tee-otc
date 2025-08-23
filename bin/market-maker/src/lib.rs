@@ -11,9 +11,9 @@ mod strategy;
 pub mod wallet;
 mod wrapped_bitcoin_quoter;
 
-use std::sync::Arc;
+use std::{str::FromStr, sync::Arc};
 
-use alloy::providers::Provider;
+use alloy::{primitives::Address, providers::Provider};
 use bdk_wallet::bitcoin;
 use clap::Parser;
 use common::{create_websocket_wallet_provider, handle_background_thread_result};
@@ -204,16 +204,22 @@ pub async fn run_market_maker(args: MarketMakerArgs) -> Result<()> {
         )
         .await?,
     );
+    let evm_wallet = Arc::new(EVMWallet::new(
+        provider.clone(),
+        args.ethereum_rpc_ws_url,
+        args.ethereum_confirmations,
+        &mut join_set,
+    ));
 
-    wallet_manager.register(
-        ChainType::Ethereum,
-        Arc::new(EVMWallet::new(
-            provider.clone(),
-            args.ethereum_rpc_ws_url,
-            args.ethereum_confirmations,
-            &mut join_set,
-        )),
-    );
+    // TODO: something better than adhoc approval?
+    evm_wallet
+        .ensure_inf_approval_on_disperse(
+            &Address::from_str("0xcbB7C0000aB88B473b1f5aFd9ef808440eed33Bf").unwrap(),
+        )
+        .await
+        .expect("Failed to ensure inf approval on disperse contract");
+
+    wallet_manager.register(ChainType::Ethereum, evm_wallet.clone());
     let btc_eth_price_oracle = price_oracle::BitcoinEtherPriceOracle::new(&mut join_set);
 
     let wrapped_bitcoin_quoter = WrappedBitcoinQuoter::new(

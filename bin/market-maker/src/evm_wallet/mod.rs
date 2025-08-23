@@ -1,6 +1,6 @@
 pub mod transaction_broadcaster;
 
-use std::sync::Arc;
+use std::{str::FromStr, sync::Arc};
 
 use alloy::{
     network::TransactionBuilder,
@@ -10,6 +10,8 @@ use alloy::{
 };
 use async_trait::async_trait;
 use common::{GenericERC20::GenericERC20Instance, WebsocketWalletProvider};
+use disperse_contract::Disperse::DisperseInstance;
+use otc_chains::traits::MarketMakerPaymentValidation;
 use otc_models::{ChainType, Currency, Lot, TokenIdentifier};
 use tokio::task::JoinSet;
 use tracing::info;
@@ -22,6 +24,7 @@ pub struct EVMWallet {
 }
 
 const BALANCE_BUFFER_PERCENT: u8 = 25; // 25% buffer
+const DISPERSE_CONTRACT_ADDRESS: &str = "0xd152f549545093347A162DCE210e7293f1452150";
 
 impl EVMWallet {
     pub fn new(
@@ -41,6 +44,46 @@ impl EVMWallet {
             provider,
         }
     }
+    pub async fn ensure_inf_approval_on_disperse(
+        &self,
+        token_address: &Address,
+    ) -> wallet::Result<()> {
+        let disperse_contract_address = Address::from_str(DISPERSE_CONTRACT_ADDRESS).unwrap();
+        let token_contract = GenericERC20Instance::new(*token_address, self.provider.clone());
+        let min_approval = U256::MAX / U256::from(2);
+        let current_approval = token_contract
+            .allowance(self.tx_broadcaster.sender, disperse_contract_address)
+            .call()
+            .await
+            .map_err(|e| WalletError::GetErc20BalanceFailed {
+                context: e.to_string(),
+            })?;
+        if min_approval > current_approval {
+            info!(
+                "Allowance on disperse contract is insufficient for token {token_address}, approving inf allowance...",
+            );
+            // Ensure at least
+            let approve = token_contract.approve(
+                Address::from_str(DISPERSE_CONTRACT_ADDRESS).unwrap(),
+                U256::MAX,
+            );
+            let approve_tx = approve.into_transaction_request();
+            let approve_tx_hash = self
+                .tx_broadcaster
+                .broadcast_transaction(
+                    approve_tx,
+                    transaction_broadcaster::PreflightCheck::Simulate,
+                )
+                .await?;
+            info!(
+                "Allowance increased to inf for contract: {token_address} for disperse contract tx hash: {:?}",
+                approve_tx_hash
+            );
+        } else {
+            info!("Allowance on disperse contract is sufficient for token {token_address}",);
+        }
+        Ok(())
+    }
 }
 
 #[async_trait]
@@ -49,11 +92,15 @@ impl Wallet for EVMWallet {
         &self,
         lot: &Lot,
         to_address: &str,
-        nonce: Option<[u8; 16]>,
+        mm_payment_validation: Option<MarketMakerPaymentValidation>,
     ) -> wallet::Result<String> {
         ensure_valid_lot(lot)?;
-        let transaction_request =
-            create_evm_transfer_transaction(&self.provider, lot, to_address, nonce)?;
+        let transaction_request = create_evm_transfer_transaction(
+            &self.provider,
+            lot,
+            to_address,
+            mm_payment_validation,
+        )?;
 
         let broadcast_result = self
             .tx_broadcaster
@@ -119,7 +166,7 @@ fn create_evm_transfer_transaction(
     provider: &Arc<WebsocketWalletProvider>,
     lot: &Lot,
     to_address: &str,
-    nonce: Option<[u8; 16]>,
+    mm_payment_validation: Option<MarketMakerPaymentValidation>,
 ) -> Result<TransactionRequest, WalletError> {
     match &lot.currency.token {
         TokenIdentifier::Native => unimplemented!(),
@@ -136,12 +183,32 @@ fn create_evm_transfer_transaction(
                     .map_err(|_| WalletError::ParseAddressFailed {
                         context: "invalid to address".to_string(),
                     })?;
-            let token_contract = GenericERC20Instance::new(token_address, provider);
-            let transfer = token_contract.transfer(to_address, lot.amount);
+
+            let fee_address =
+                Address::from_str(&otc_models::FEE_ADDRESSES_BY_CHAIN[&ChainType::Ethereum])
+                    .unwrap();
+
+            let token_contract = DisperseInstance::new(
+                Address::from_str(DISPERSE_CONTRACT_ADDRESS).unwrap(),
+                provider,
+            );
+            let recipients = match mm_payment_validation.is_some() {
+                true => vec![to_address, fee_address],
+                false => vec![to_address],
+            };
+            let amounts = match mm_payment_validation.is_some() {
+                true => {
+                    let fee_amount = mm_payment_validation.as_ref().unwrap().fee_amount;
+                    vec![lot.amount, fee_amount]
+                }
+                false => vec![lot.amount],
+            };
+            let transfer = token_contract.disperseToken(token_address, recipients, amounts);
             let mut transaction_request = transfer.into_transaction_request();
 
             // Add nonce to the end of calldata if provided
-            if let Some(nonce) = nonce {
+            if let Some(mm_payment_validation) = &mm_payment_validation {
+                let nonce = mm_payment_validation.embedded_nonce;
                 // Audit: Consider how this could be problematic if done with arbitrary addresses (not whitelisted)
                 let mut calldata_with_nonce = transaction_request
                     .input

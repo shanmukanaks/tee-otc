@@ -10,6 +10,7 @@ use market_maker::evm_wallet::EVMWallet;
 use market_maker::wallet::Wallet;
 use market_maker::{bitcoin_wallet::BitcoinWallet, run_market_maker, MarketMakerArgs};
 use otc_models::{ChainType, Currency, Lot, Quote, QuoteMode, QuoteRequest, TokenIdentifier};
+use otc_rfq_protocol::RFQResult;
 use otc_server::api::SwapResponse;
 use otc_server::{
     api::{CreateSwapRequest, CreateSwapResponse},
@@ -27,6 +28,7 @@ use crate::utils::{
     build_rfq_server_test_args, build_test_user_ethereum_wallet, build_tmp_bitcoin_wallet_db_file,
     get_free_port, wait_for_market_maker_to_connect_to_rfq_server, wait_for_otc_server_to_be_ready,
     wait_for_rfq_server_to_be_ready, wait_for_swap_to_be_settled, PgConnectOptionsExt,
+    TEST_MARKET_MAKER_ID,
 };
 
 #[sqlx::test]
@@ -177,6 +179,12 @@ async fn test_swap_from_bitcoin_to_ethereum(
     let quote = quote_response.quote;
     info!("Received quote: {:?}", quote);
 
+    assert!(quote.is_some(), "Quote should be present");
+    let quote = match quote.as_ref().unwrap() {
+        RFQResult::Success(quote) => quote.quote.clone(),
+        _ => panic!("Quote should be a success"),
+    };
+
     // create a swap request
     let swap_request = CreateSwapRequest {
         quote,
@@ -290,6 +298,15 @@ async fn test_swap_from_ethereum_to_bitcoin(
         .await
         .unwrap();
 
+    devnet
+        .ethereum
+        .fund_eth_address(
+            market_maker_account.ethereum_address,
+            U256::from(100_000_000_000_000_000_000i128),
+        )
+        .await
+        .unwrap();
+
     let mut service_join_set = JoinSet::new();
 
     let otc_port = get_free_port().await;
@@ -381,6 +398,12 @@ async fn test_swap_from_ethereum_to_bitcoin(
 
     let quote = quote_response.quote;
     info!("Received quote: {:?}", quote);
+
+    assert!(quote.is_some(), "Quote should be present");
+    let quote = match quote.as_ref().unwrap() {
+        RFQResult::Success(quote) => quote.quote.clone(),
+        _ => panic!("Quote should be a success"),
+    };
 
     // create a swap request
     let swap_request = CreateSwapRequest {

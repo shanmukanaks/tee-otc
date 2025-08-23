@@ -7,7 +7,8 @@ use bdk_wallet::{
     signer::SignOptions,
     KeychainKind, PersistedWallet,
 };
-use otc_models::Lot;
+use otc_chains::traits::MarketMakerPaymentValidation;
+use otc_models::{ChainType, Lot};
 use snafu::Snafu;
 use tokio::sync::{mpsc, oneshot, Mutex, RwLock};
 use tokio::task::JoinSet;
@@ -50,7 +51,7 @@ pub type Result<T, E = TransactionBroadcasterError> = std::result::Result<T, E>;
 pub struct TransactionRequest {
     pub lot: Lot,
     pub to_address: String,
-    pub nonce: Option<[u8; 16]>,
+    pub mm_payment_validation: Option<MarketMakerPaymentValidation>,
     pub response_tx: oneshot::Sender<Result<String>>,
 }
 
@@ -81,7 +82,7 @@ impl BitcoinTransactionBroadcaster {
                     &last_sync,
                     request.lot,
                     request.to_address,
-                    request.nonce,
+                    request.mm_payment_validation,
                 )
                 .await;
 
@@ -101,14 +102,14 @@ impl BitcoinTransactionBroadcaster {
         &self,
         lot: Lot,
         to_address: String,
-        nonce: Option<[u8; 16]>,
+        mm_payment_validation: Option<MarketMakerPaymentValidation>,
     ) -> Result<String> {
         let (response_tx, response_rx) = oneshot::channel();
 
         let request = TransactionRequest {
             lot,
             to_address,
-            nonce,
+            mm_payment_validation,
             response_tx,
         };
 
@@ -130,7 +131,7 @@ async fn process_transaction(
     last_sync: &Arc<RwLock<Instant>>,
     lot: Lot,
     to_address: String,
-    nonce: Option<[u8; 16]>,
+    mm_payment_validation: Option<MarketMakerPaymentValidation>,
 ) -> Result<String> {
     let start_time = Instant::now();
 
@@ -172,9 +173,20 @@ async fn process_transaction(
     tx_builder.add_recipient(address.script_pubkey(), amount);
 
     // Add OP_RETURN output with nonce if provided
-    if let Some(nonce) = nonce {
+    if let Some(mm_payment_validation) = mm_payment_validation {
+        let nonce = mm_payment_validation.embedded_nonce;
         let op_return_script = create_op_return_script(&nonce);
         tx_builder.add_recipient(op_return_script, Amount::ZERO);
+        // Now handle fees
+        let fee_amount = mm_payment_validation.fee_amount;
+        let fee_address =
+            Address::from_str(&otc_models::FEE_ADDRESSES_BY_CHAIN[&ChainType::Bitcoin])
+                .unwrap()
+                .assume_checked();
+        tx_builder.add_recipient(
+            fee_address.script_pubkey(),
+            Amount::from_sat(fee_amount.to::<u64>()),
+        );
     }
 
     // Create and sign the transaction

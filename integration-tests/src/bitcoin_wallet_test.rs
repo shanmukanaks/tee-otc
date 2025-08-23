@@ -3,6 +3,7 @@ use bitcoin::{Network, PrivateKey};
 use bitcoincore_rpc_async::RpcApi;
 use devnet::{MultichainAccount, RiftDevnet};
 use market_maker::{bitcoin_wallet::BitcoinWallet, wallet::Wallet};
+use otc_chains::traits::MarketMakerPaymentValidation;
 use otc_models::{ChainType, Currency, Lot, TokenIdentifier};
 use sqlx::{pool::PoolOptions, postgres::PgConnectOptions};
 use std::{str::FromStr, time::Duration};
@@ -153,7 +154,14 @@ async fn test_bitcoin_wallet_basic_operations(
 
     let mm_nonce = hex!("deadbeefdeadbeefdeadbeefdeadbeef");
     let tx_result3 = bitcoin_wallet
-        .create_transaction(&btc_lot, &user_btc_address, Some(mm_nonce))
+        .create_transaction(
+            &btc_lot,
+            &user_btc_address,
+            Some(MarketMakerPaymentValidation {
+                embedded_nonce: mm_nonce,
+                fee_amount: U256::from(300),
+            }),
+        )
         .await;
 
     assert!(

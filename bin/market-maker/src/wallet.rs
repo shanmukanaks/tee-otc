@@ -1,5 +1,6 @@
 use async_trait::async_trait;
 use dashmap::DashMap;
+use otc_chains::traits::MarketMakerPaymentValidation;
 use otc_models::{ChainType, Currency, Lot};
 use snafu::Snafu;
 use std::{collections::HashMap, sync::Arc};
@@ -59,7 +60,7 @@ pub trait Wallet: Send + Sync {
         &self,
         lot: &Lot,
         to_address: &str,
-        nonce: Option<[u8; 16]>,
+        mm_payment_validation: Option<MarketMakerPaymentValidation>,
     ) -> Result<String>;
 
     /// Check if the wallet can fill the specified amount of currency
@@ -129,7 +130,7 @@ mod tests {
             &self,
             _lot: &Lot,
             _to_address: &str,
-            _nonce: Option<[u8; 16]>,
+            _mm_payment_validation: Option<MarketMakerPaymentValidation>,
         ) -> Result<String> {
             Ok("mock_txid_123".to_string())
         }

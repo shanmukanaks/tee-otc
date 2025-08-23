@@ -1,4 +1,4 @@
-.PHONY: dev-db stop-db clean-db test build run help test-clean test-isolated ci-test test-robust
+.PHONY: start-db stop-db clean-db test build run help test-clean test-isolated ci-test test-robust
 
 .ONESHELL:
 
@@ -11,11 +11,11 @@ help: ## Show this help message
 	@echo 'Targets:'
 	@awk 'BEGIN {FS = ":.*?## "} /^[a-zA-Z_-]+:.*?## / {printf "  %-15s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
 
-dev-db: ## Start development database
+start-db: ## Start development database
 	@echo "Starting PostgreSQL..."
 	@docker compose -f compose.test-db.yml up -d
 	@echo "Waiting for database to be ready..."
-	@until docker exec test_db pg_isready -U postgres -d otc_dev >/dev/null 2>&1; do \
+	@until docker exec otc_dev pg_isready -U postgres -d otc_dev >/dev/null 2>&1; do \
 		sleep 0.1; \
 	done
 	@echo "Database ready at: $(DATABASE_URL)"

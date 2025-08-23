@@ -1,11 +1,14 @@
+use crate::traits::MarketMakerPaymentValidation;
 use crate::{key_derivation, ChainOperations, Result};
-use alloy::primitives::{Address, U256};
+use alloy::primitives::{Address, Log, U256};
 use alloy::providers::{DynProvider, Provider, ProviderBuilder};
+use alloy::rpc::types::TransactionReceipt;
 use alloy::signers::local::PrivateKeySigner;
 use alloy::sol;
 use async_trait::async_trait;
+use common::inverse_compute_protocol_fee;
 use evm_token_indexer_client::TokenIndexerClient;
-use otc_models::{Lot, TokenIdentifier, TransferInfo, TxStatus, Wallet};
+use otc_models::{ChainType, Lot, TokenIdentifier, TransferInfo, TxStatus, Wallet};
 use std::str::FromStr;
 use std::time::Duration;
 use tracing::{debug, info};
@@ -106,9 +109,9 @@ impl ChainOperations for EthereumChain {
     }
     async fn search_for_transfer(
         &self,
-        address: &str,
+        recipient_address: &str,
         lot: &Lot,
-        embedded_nonce: Option<[u8; 16]>,
+        mm_payment: Option<MarketMakerPaymentValidation>,
         _from_block_height: Option<u64>,
     ) -> Result<Option<TransferInfo>> {
         let token_address = match &lot.currency.token {
@@ -125,12 +128,13 @@ impl ChainOperations for EthereumChain {
             return Ok(None);
         }
 
-        let to_address = Address::from_str(address).map_err(|_| crate::Error::Serialization {
-            message: "Invalid address".to_string(),
-        })?;
+        let recipient_address =
+            Address::from_str(recipient_address).map_err(|_| crate::Error::Serialization {
+                message: "Invalid address".to_string(),
+            })?;
 
         let transfer_hint = self
-            .get_transfer(&to_address, &lot.amount, embedded_nonce)
+            .get_transfer(&recipient_address, &lot.amount, mm_payment)
             .await?;
         if transfer_hint.is_none() {
             return Ok(None);
@@ -156,19 +160,19 @@ impl EthereumChain {
     // Note this function's response is safe to trust, b/c it will validate the responses from the untrusted evm_indexer_client
     async fn get_transfer(
         &self,
-        address: &Address,
+        recipient_address: &Address,
         amount: &U256,
-        embedded_nonce: Option<[u8; 16]>,
+        mm_payment: Option<MarketMakerPaymentValidation>,
     ) -> Result<Option<TransferInfo>> {
         info!(
-            "Searching for transfer for address: {}, amount: {}, embedded_nonce: {:?}",
-            address, amount, embedded_nonce
+            "Searching for transfer for address: {}, amount: {}, mm_payment: {:?}",
+            recipient_address, amount, mm_payment
         );
 
         // use the untrusted evm_indexer_client to get the transfer hint - this will only return 50 latest transfers (TODO: how to handle this?)
         let transfers = self
             .evm_indexer_client
-            .get_transfers_to(*address, None, Some(*amount))
+            .get_transfers_to(*recipient_address, None, Some(*amount))
             .await?;
 
         if transfers.transfers.is_empty() {
@@ -184,6 +188,7 @@ impl EthereumChain {
                 .provider
                 .get_transaction_receipt(transfer.transaction_hash)
                 .await?;
+
             if transaction_receipt.is_none() {
                 continue;
             }
@@ -192,54 +197,94 @@ impl EthereumChain {
                 continue;
             }
 
-            let transfer_log = transaction_receipt.decoded_log::<Transfer>();
-            if transfer_log.is_none() {
+            let intra_tx_transfers =
+                extract_all_transfers_from_transaction_receipt(&transaction_receipt);
+            // TODO: There's a security issue with handling more than 1 swap per tx, so for now we force there to be no more than 2 transfers per tx (1 for the swap, 1 for the fee)
+            if intra_tx_transfers.len() > 2 {
                 continue;
             }
-            let transfer_log = transfer_log.unwrap();
-            // validate the recipient
-            if transfer_log.to != *address {
-                continue;
-            }
-            // validate the amount
-            if transfer_log.value < *amount {
-                continue;
-            }
-            // validate the embedded nonce
-            if let Some(embedded_nonce) = embedded_nonce {
-                let transaction = self
-                    .provider
-                    .get_raw_transaction_by_hash(transfer.transaction_hash)
-                    .await?;
-                if transaction.is_none() {
+            for (index, transfer_log) in intra_tx_transfers.iter().enumerate() {
+                // validate the recipient
+                if transfer_log.to != *recipient_address {
                     continue;
                 }
-                let transaction = transaction.unwrap();
-                let tx_hex = alloy::hex::encode(transaction);
-                let nonce_hex = alloy::hex::encode(embedded_nonce);
-                if !tx_hex.contains(&nonce_hex) {
+                // validate the amount
+                if transfer_log.value < *amount {
                     continue;
                 }
-            }
-            // get the current block height
-            let current_block_height = self.provider.get_block_number().await?;
-            let confirmations = current_block_height - transaction_receipt.block_number.unwrap();
+                // validate the embedded nonce
+                if let Some(mm_payment) = &mm_payment {
+                    let embedded_nonce = mm_payment.embedded_nonce;
+                    let transaction = self
+                        .provider
+                        .get_raw_transaction_by_hash(transfer.transaction_hash)
+                        .await?;
+                    if transaction.is_none() {
+                        continue;
+                    }
+                    let transaction = transaction.unwrap();
+                    let tx_hex = alloy::hex::encode(transaction);
+                    let nonce_hex = alloy::hex::encode(embedded_nonce);
+                    if !tx_hex.contains(&nonce_hex) {
+                        continue;
+                    }
 
-            // only return the transfer if it has more confirmations than the previous transfer hint
-            if transfer_hint.is_some()
-                && transfer_hint.as_ref().unwrap().confirmations > confirmations
-            {
-                continue;
-            }
+                    let fee_address = Address::from_str(
+                        &otc_models::FEE_ADDRESSES_BY_CHAIN[&ChainType::Ethereum],
+                    )
+                    .map_err(|_| crate::Error::Serialization {
+                        message: "Invalid fee address".to_string(),
+                    })?;
 
-            transfer_hint = Some(TransferInfo {
-                tx_hash: alloy::hex::encode(transfer.transaction_hash),
-                detected_at: chrono::Utc::now(),
-                confirmations,
-                amount: transfer_log.value,
-            });
+                    // NOTE: This is only works b/c we force there to be 2 transfers IF it's a MM payment
+                    let fee_log_index = if index == 0 { 1 } else { 0 };
+                    let fee_log = intra_tx_transfers[fee_log_index].clone();
+                    if fee_log.to != fee_address {
+                        info!("Fee address is not the expected address");
+                        continue;
+                    }
+                    if fee_log.value < mm_payment.fee_amount {
+                        info!("Fee amount is less than expected");
+                        continue;
+                    }
+                }
+                // get the current block height
+                let current_block_height = self.provider.get_block_number().await?;
+                let confirmations =
+                    current_block_height - transaction_receipt.block_number.unwrap();
+
+                // only return the transfer if it has more confirmations than the previous transfer hint
+                if transfer_hint.is_some()
+                    && transfer_hint.as_ref().unwrap().confirmations > confirmations
+                {
+                    continue;
+                }
+
+                transfer_hint = Some(TransferInfo {
+                    tx_hash: alloy::hex::encode(transfer.transaction_hash),
+                    detected_at: chrono::Utc::now(),
+                    confirmations,
+                    amount: transfer_log.value,
+                });
+            }
         }
 
         Ok(transfer_hint)
     }
+}
+
+fn extract_all_transfers_from_transaction_receipt(
+    transaction_receipt: &TransactionReceipt,
+) -> Vec<Log<Transfer>> {
+    let mut transfers = Vec::new();
+    for log in transaction_receipt.logs() {
+        let transfer_log = log.log_decode::<Transfer>();
+        if transfer_log.is_err() {
+            // This log is not a transfer log, so skip it
+            continue;
+        }
+        let transfer_log = transfer_log.unwrap().inner;
+        transfers.push(transfer_log);
+    }
+    transfers
 }

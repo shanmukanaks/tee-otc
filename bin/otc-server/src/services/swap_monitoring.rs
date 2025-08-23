@@ -1,7 +1,10 @@
 use crate::db::Database;
 use crate::error::OtcServerError;
 use crate::{config::Settings, services::mm_registry};
+use alloy::primitives::U256;
 use chrono::Utc;
+use common::FeeCalcFromLot;
+use otc_chains::traits::MarketMakerPaymentValidation;
 use otc_chains::ChainRegistry;
 use otc_models::{MMDepositStatus, Swap, SwapStatus, TxStatus, UserDepositStatus};
 use snafu::prelude::*;
@@ -137,14 +140,13 @@ impl SwapMonitoringService {
         let quote = &swap.quote;
 
         // Get the chain operations for the user's deposit chain (from = user sends)
-        let chain_ops =
-            self.chain_registry
-                .get(&quote.from.currency.chain)
-                .ok_or(MonitoringError::ChainOperation {
-                    source: otc_chains::Error::ChainNotSupported {
-                        chain: format!("{:?}", quote.from.currency.chain),
-                    },
-                })?;
+        let chain_ops = self.chain_registry.get(&quote.from.currency.chain).ok_or(
+            MonitoringError::ChainOperation {
+                source: otc_chains::Error::ChainNotSupported {
+                    chain: format!("{:?}", quote.from.currency.chain),
+                },
+            },
+        )?;
 
         // Derive the user deposit address
         let user_wallet = chain_ops
@@ -216,14 +218,13 @@ impl SwapMonitoringService {
                 })?;
 
         // Get the chain operations for the user's deposit chain
-        let chain_ops =
-            self.chain_registry
-                .get(&quote.from.currency.chain)
-                .ok_or(MonitoringError::ChainOperation {
-                    source: otc_chains::Error::ChainNotSupported {
-                        chain: format!("{:?}", quote.from.currency.chain),
-                    },
-                })?;
+        let chain_ops = self.chain_registry.get(&quote.from.currency.chain).ok_or(
+            MonitoringError::ChainOperation {
+                source: otc_chains::Error::ChainNotSupported {
+                    chain: format!("{:?}", quote.from.currency.chain),
+                },
+            },
+        )?;
 
         // Check confirmation status
         let tx_status = chain_ops
@@ -300,21 +301,23 @@ impl SwapMonitoringService {
         let quote = &swap.quote;
 
         // Get the chain operations for the MM's deposit chain (to = MM sends)
-        let chain_ops =
-            self.chain_registry
-                .get(&quote.to.currency.chain)
-                .ok_or(MonitoringError::ChainOperation {
-                    source: otc_chains::Error::ChainNotSupported {
-                        chain: format!("{:?}", quote.to.currency.chain),
-                    },
-                })?;
+        let chain_ops = self.chain_registry.get(&quote.to.currency.chain).ok_or(
+            MonitoringError::ChainOperation {
+                source: otc_chains::Error::ChainNotSupported {
+                    chain: format!("{:?}", quote.to.currency.chain),
+                },
+            },
+        )?;
 
         // Check for deposit
         let deposit_info = chain_ops
             .search_for_transfer(
                 &swap.user_destination_address,
                 &quote.to,
-                Some(swap.mm_nonce),
+                Some(MarketMakerPaymentValidation {
+                    fee_amount: U256::from(quote.to.compute_protocol_fee()),
+                    embedded_nonce: swap.mm_nonce,
+                }),
                 None,
             )
             .await
@@ -356,14 +359,13 @@ impl SwapMonitoringService {
                 })?;
 
         // Get the chain operations for the MM's deposit chain
-        let chain_ops =
-            self.chain_registry
-                .get(&quote.to.currency.chain)
-                .ok_or(MonitoringError::ChainOperation {
-                    source: otc_chains::Error::ChainNotSupported {
-                        chain: format!("{:?}", quote.to.currency.chain),
-                    },
-                })?;
+        let chain_ops = self.chain_registry.get(&quote.to.currency.chain).ok_or(
+            MonitoringError::ChainOperation {
+                source: otc_chains::Error::ChainNotSupported {
+                    chain: format!("{:?}", quote.to.currency.chain),
+                },
+            },
+        )?;
 
         // Check confirmation status
         let tx_status = chain_ops

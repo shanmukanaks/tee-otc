@@ -1,7 +1,10 @@
 use crate::quote_storage::QuoteStorage;
 use crate::strategy::ValidationStrategy;
 use crate::{config::Config, wallet::WalletManager};
+use alloy::primitives::U256;
 use chrono::Utc;
+use common::FeeCalcFromLot;
+use otc_chains::traits::MarketMakerPaymentValidation;
 use otc_mm_protocol::{MMErrorCode, MMRequest, MMResponse, MMStatus, ProtocolMessage};
 use std::sync::Arc;
 use tracing::{error, info, warn};
@@ -48,14 +51,22 @@ impl OTCMessageHandler {
                 // Verify the quote exists in our database
                 let quote_exists = match self.quote_storage.get_quote(*quote_id).await {
                     Ok(quote) => {
-                        info!("Found quote {} in database, hash: {:?}", quote_id, quote.hash());
+                        info!(
+                            "Found quote {} in database, hash: {:?}",
+                            quote_id,
+                            quote.hash()
+                        );
                         // Verify the hash matches
                         if quote.hash() != *quote_hash {
-                            warn!("Quote {} hash mismatch! Expected: {:?}, Got: {:?}", 
-                                  quote_id, quote.hash(), quote_hash);
+                            warn!(
+                                "Quote {} hash mismatch! Expected: {:?}, Got: {:?}",
+                                quote_id,
+                                quote.hash(),
+                                quote_hash
+                            );
                         }
                         true
-                    },
+                    }
                     Err(e) => {
                         error!("Failed to retrieve quote {} from database: {}", quote_id, e);
                         false
@@ -135,7 +146,10 @@ impl OTCMessageHandler {
                             .create_transaction(
                                 expected_lot,
                                 user_destination_address,
-                                Some(*mm_nonce),
+                                Some(MarketMakerPaymentValidation {
+                                    fee_amount: U256::from(expected_lot.compute_protocol_fee()),
+                                    embedded_nonce: *mm_nonce,
+                                }),
                             )
                             .await;
 

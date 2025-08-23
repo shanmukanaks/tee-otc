@@ -11,6 +11,7 @@ use bdk_wallet::{
     signer::SignerError,
     CreateParams, KeychainKind, LoadParams, LoadWithPersistError, PersistedWallet,
 };
+use otc_chains::traits::MarketMakerPaymentValidation;
 use otc_models::{ChainType, Currency, Lot, TokenIdentifier};
 use snafu::{ResultExt, Snafu};
 use tokio::sync::Mutex;
@@ -166,7 +167,7 @@ impl WalletTrait for BitcoinWallet {
         &self,
         lot: &Lot,
         to_address: &str,
-        nonce: Option<[u8; 16]>,
+        mm_payment_validation: Option<MarketMakerPaymentValidation>,
     ) -> wallet::Result<String> {
         ensure_valid_lot(lot)?;
 
@@ -177,7 +178,7 @@ impl WalletTrait for BitcoinWallet {
 
         // Send transaction request to the broadcaster
         self.tx_broadcaster
-            .broadcast_transaction(lot.clone(), to_address.to_string(), nonce)
+            .broadcast_transaction(lot.clone(), to_address.to_string(), mm_payment_validation)
             .await
             .map_err(|e| match e {
                 transaction_broadcaster::TransactionBroadcasterError::InvalidCurrency => {

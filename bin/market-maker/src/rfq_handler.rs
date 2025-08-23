@@ -1,6 +1,6 @@
 use chrono::Utc;
 use otc_models::{Currency, Lot, Quote};
-use otc_rfq_protocol::{ProtocolMessage, RFQRequest, RFQResponse};
+use otc_rfq_protocol::{ProtocolMessage, RFQRequest, RFQResponse, RFQResult};
 use std::sync::Arc;
 use tracing::{debug, error, info, warn};
 use uuid::Uuid;
@@ -50,32 +50,32 @@ impl RFQMessageHandler {
                     tracing::error!("Failed to compute quote: {:?}", quote.err());
                     return None;
                 }
-                let quote = quote.unwrap();
-                if quote.is_none() {
-                    tracing::warn!("No quote generated for request {}", request_id);
-                    return None;
-                }
-                let quote = quote.unwrap();
+                let rfq_result = quote.unwrap();
 
-                info!(
-                    "Generated quote: id={}, from_chain={:?}, from_amount={}, to_chain={:?}, to_amount={}",
-                    quote.id, quote.from.currency.chain, quote.from.amount, quote.to.currency.chain , quote.to.amount
-                );
+                let quote = match &rfq_result {
+                    RFQResult::Success(quote) => Some(quote.quote.clone()),
+                    RFQResult::MakerUnavailable(_) => None,
+                    RFQResult::InvalidRequest(_) => None,
+                };
 
-                // Store the quote in the database
-                if let Err(e) = self.quote_storage.store_quote(&quote).await {
-                    error!("Failed to store quote {}: {}", quote.id, e);
-                } else {
-                    info!("Stored quote {} in database", quote.id);
-                    // Mark it as sent to RFQ
-                    if let Err(e) = self.quote_storage.mark_sent_to_rfq(quote.id).await {
-                        error!("Failed to mark quote {} as sent to RFQ: {}", quote.id, e);
+                if let Some(quote) = quote {
+                    info!(
+                        "Generated quote: id={}, from_chain={:?}, from_amount={}, to_chain={:?}, to_amount={}",
+                        quote.id, quote.from.currency.chain, quote.from.amount, quote.to.currency.chain , quote.to.amount
+                    );
+                    if let Err(e) = self.quote_storage.store_quote(&quote).await {
+                        error!("Failed to store quote {}: {}", quote.id, e);
+                    } else {
+                        info!("Stored quote {} in database", quote.id);
+                        if let Err(e) = self.quote_storage.mark_sent_to_rfq(quote.id).await {
+                            error!("Failed to mark quote {} as sent to RFQ: {}", quote.id, e);
+                        }
                     }
                 }
 
                 let response = RFQResponse::QuoteResponse {
                     request_id: *request_id,
-                    quote: Some(quote),
+                    quote: rfq_result,
                     timestamp: Utc::now(),
                 };
 

@@ -7,6 +7,7 @@ use market_maker::{
     evm_wallet::{self, EVMWallet},
     wallet::Wallet,
 };
+use otc_chains::traits::MarketMakerPaymentValidation;
 use otc_models::{ChainType, Currency, Lot, TokenIdentifier};
 use sqlx::{pool::PoolOptions, postgres::PgConnectOptions};
 use std::{sync::Arc, time::Duration};
@@ -195,7 +196,14 @@ async fn test_evm_wallet_nonce_error_retry(
 
     let custom_nonce: [u8; 16] = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16];
     let tx_with_nonce = evm_wallet
-        .create_transaction(&lot, &user_address, Some(custom_nonce))
+        .create_transaction(
+            &lot,
+            &user_address,
+            Some(MarketMakerPaymentValidation {
+                embedded_nonce: custom_nonce,
+                fee_amount: U256::from(300),
+            }),
+        )
         .await;
 
     assert!(
@@ -362,7 +370,9 @@ async fn test_evm_wallet_error_handling(
     let invalid_lot = Lot {
         currency: Currency {
             chain: ChainType::Ethereum,
-            token: TokenIdentifier::Address("0x1234567890123456789012345678901234567890".to_string()),
+            token: TokenIdentifier::Address(
+                "0x1234567890123456789012345678901234567890".to_string(),
+            ),
             decimals: 18,
         },
         amount: U256::from(100),

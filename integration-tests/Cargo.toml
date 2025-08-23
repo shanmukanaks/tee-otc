@@ -29,3 +29,5 @@ uuid = {workspace= true}
 rfq-server ={workspace= true}
 serde = {workspace = true}
 chrono = {workspace=true}
+otc-rfq-protocol = {workspace = true}
+otc-chains = {workspace=true}

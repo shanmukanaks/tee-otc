@@ -16,7 +16,9 @@ use axum::{
 use futures_util::{SinkExt, StreamExt};
 use otc_auth::ApiKeyStore;
 use otc_models::{Currency, Lot, Quote, QuoteRequest};
-use otc_rfq_protocol::{Connected, ProtocolMessage, RFQRequest, RFQResponse};
+use otc_rfq_protocol::{
+    Connected, ProtocolMessage, QuoteWithFees, RFQRequest, RFQResponse, RFQResult,
+};
 use serde::{Deserialize, Serialize};
 use snafu::ResultExt;
 use std::{net::SocketAddr, sync::Arc};
@@ -42,7 +44,7 @@ struct Status {
 #[derive(Serialize, Deserialize, Debug)]
 pub struct QuoteResponse {
     pub request_id: Uuid,
-    pub quote: Quote,
+    pub quote: Option<RFQResult<QuoteWithFees>>,
     pub total_quotes_received: usize,
     pub market_makers_contacted: usize,
 }
@@ -340,9 +342,6 @@ async fn request_quotes(
         Ok(result) => {
             info!(
                 request_id = %result.request_id,
-                best_quote_id = %result.best_quote.id,
-                market_maker_id = %result.best_quote.market_maker_id,
-                output_amount = %result.best_quote.to.amount,
                 "Quote aggregation successful"
             );
 

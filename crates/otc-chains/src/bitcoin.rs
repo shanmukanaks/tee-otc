@@ -1,14 +1,17 @@
+use crate::traits::MarketMakerPaymentValidation;
 use crate::{key_derivation, ChainOperations, Result};
 use alloy::hex;
 use alloy::primitives::U256;
 use async_trait::async_trait;
 use bitcoin::secp256k1::{Secp256k1, SecretKey};
-use bitcoin::{consensus, Address, Amount, CompressedPublicKey, Network, PrivateKey, Script};
+use bitcoin::{Address, Amount, CompressedPublicKey, Network, PrivateKey, Transaction};
 use bitcoincore_rpc_async::{Auth, Client, RpcApi};
 use otc_models::{ChainType, Lot, TransferInfo, TxStatus, Wallet};
 use std::str::FromStr;
 use std::time::Duration;
 use tracing::{debug, info};
+
+const FEE_ADDRESS: &str = "bc1q2p8ms86h3namagp4y486udsv4syydhvqztg886";
 
 pub struct BitcoinChain {
     rpc_client: Client,
@@ -107,7 +110,7 @@ impl ChainOperations for BitcoinChain {
         &self,
         address: &str,
         lot: &Lot,
-        embedded_nonce: Option<[u8; 16]>,
+        mm_payment: Option<MarketMakerPaymentValidation>,
         _from_block_height: Option<u64>,
     ) -> Result<Option<TransferInfo>> {
         info!("Searching for transfer");
@@ -116,7 +119,7 @@ impl ChainOperations for BitcoinChain {
             "search_for_transfer",
             address = address,
             lot = format!("{:?}", lot),
-            embedded_nonce = format!("{:?}", embedded_nonce)
+            mm_payment = format!("{:?}", mm_payment)
         );
         let _enter = span.enter();
 
@@ -129,99 +132,11 @@ impl ChainOperations for BitcoinChain {
             });
         }
         let address = bitcoin::Address::from_str(address)?.assume_checked();
-        let potential_transfer = self
-            .get_transfer_hint(
-                address.to_string().as_str(),
-                &lot.amount,
-                embedded_nonce,
-            )
+        let transfer_opt = self
+            .get_transfer_hint(address.to_string().as_str(), &lot.amount, mm_payment)
             .await?;
-        debug!("Potential transfer: {:?}", potential_transfer);
-        if potential_transfer.is_some() {
-            let potential_transfer = potential_transfer.unwrap();
-            // Validate the transfer hint
-            let tx = self
-                .rpc_client
-                .get_raw_transaction_verbose(
-                    &bitcoin::Txid::from_str(&potential_transfer.tx_hash).unwrap(),
-                )
-                .await?;
-
-            // did the transfer hint lie about it's confirmations (it's okay if it was outdated)
-            if potential_transfer.confirmations > tx.confirmations.unwrap_or(0) as u64 {
-                tracing::debug!(
-                    message = "Transfer hint lied about it's confirmations",
-                    tx_hash = potential_transfer.tx_hash,
-                    hint_confirmations = potential_transfer.confirmations,
-                    actual_confirmations = tx.confirmations.unwrap_or(0)
-                );
-                return Ok(None);
-            }
-
-            // validate the embedded nonce is in the tx (if required)
-            if embedded_nonce.is_some() {
-                let embedded_nonce = embedded_nonce.unwrap();
-                if !tx.hex.contains(hex::encode(embedded_nonce).as_str()) {
-                    tracing::debug!(
-                        message = "Transfer hint lied about it's embedded nonce",
-                        tx_hash = potential_transfer.tx_hash,
-                        hint_nonce = hex::encode(embedded_nonce),
-                        actual_tx = tx.hex
-                    );
-                    return Ok(None);
-                }
-            }
-            let minimum_amount = lot.amount.to::<u64>();
-            let valid_outputs = tx
-                .outputs
-                .iter()
-                .filter_map(|output| {
-                    let address_from_script = Address::from_script(
-                        Script::from_bytes(&hex::decode(&output.script_pubkey.hex).unwrap()),
-                        bitcoin::consensus::Params::from(self.network),
-                    );
-                    if address_from_script.is_err() {
-                        debug!(
-                            "Error parsing output script pubkey: {:?}",
-                            address_from_script.err()
-                        );
-                        None
-                    } else if *address_from_script.as_ref().unwrap() == address {
-                        // validate the funds have been sent to our "address"
-                        if output.value >= Amount::from_sat(minimum_amount).to_btc() {
-                            // validate sufficient funds have been sent to our "to"
-                            Some(output.clone())
-                        } else {
-                            debug!(
-                                "Not enough funds were sent to our address, actual amount was: {:?} vs expected amount: {:?}",
-                                output.value, minimum_amount
-                            );
-                            None
-                        }
-                    } else {
-                        debug!(
-                            "Output script pubkey is not spendable by our address: {:?}",
-                            address_from_script.unwrap()
-                        );
-                        None
-                    }
-                })
-                .collect::<Vec<_>>();
-
-            if valid_outputs.is_empty() {
-                tracing::debug!(
-                    message = "Transfer hint did not send funds to our address",
-                    tx_hash = potential_transfer.tx_hash,
-                    address = address.to_string()
-                );
-                return Ok(None);
-            }
-
-            // We dont actually have to modify the original hint, since we've validated all of it's info against our rpc
-            Ok(Some(potential_transfer))
-        } else {
-            Ok(None)
-        }
+        debug!("Potential transfer: {:?}", transfer_opt);
+        Ok(transfer_opt)
     }
 
     fn validate_address(&self, address: &str) -> bool {
@@ -241,23 +156,26 @@ impl ChainOperations for BitcoinChain {
 }
 
 impl BitcoinChain {
-    /// Called a hint b/c the esplora client CANNOT be trusted to return non-fradulent data (b/c it not intended to run locally)
-    /// Note that if there are more than 50 utxos available to the address, this could ignore a valid transfer (TODO: how to handle this?)
+    // The output of this function can be trusted as we validate the transfer hint against the rpc client
     async fn get_transfer_hint(
         &self,
         address: &str,
         amount: &U256,
-        embedded_nonce: Option<[u8; 16]>,
+        mm_payment: Option<MarketMakerPaymentValidation>,
     ) -> Result<Option<TransferInfo>> {
         let address = bitcoin::Address::from_str(address)?.assume_checked();
+
+        // Called a hint b/c the esplora client CANNOT be trusted to return non-fradulent data (b/c it not intended to run locally)
+        // Note that if there are more than 50 utxos available to the address, this could ignore a valid transfer (TODO: how to handle this?)
         let utxos = self.esplora_client.get_address_utxo(&address).await?;
         debug!("UTXOs: {:?}", utxos);
-        let current_block_height = self.esplora_client.get_height().await?;
+        let current_block_height = self.rpc_client.get_block_count().await? as u32;
         let mut most_confirmed_transfer: Option<TransferInfo> = None;
         for utxo in utxos {
             if utxo.value < amount.to::<u64>() {
                 continue;
             }
+            // TODO: the height of the utxo should be validated against the rpc client
             let cur_utxo_confirmations =
                 current_block_height - utxo.status.block_height.unwrap_or(current_block_height);
             if most_confirmed_transfer.is_some()
@@ -270,16 +188,81 @@ impl BitcoinChain {
             }
             // At this point, we either have a new candidate that's more confirmed than the current candidate
             // as let's finally validate that it's the correct transfer
-            if embedded_nonce.is_some() {
+            if let Some(mm_payment) = &mm_payment {
                 // we only need to do this check if the embedded nonce is a requirement
-                let embedded_nonce = embedded_nonce.unwrap();
-                let tx = self.esplora_client.get_tx(&utxo.txid).await?;
-                if tx.is_none() {
+                let embedded_nonce = mm_payment.embedded_nonce;
+                // TODO: Use rpc client instead of esplora so we dont have to implement validate logic twice
+                let tx_hex = self
+                    .rpc_client
+                    .get_raw_transaction_hex(&utxo.txid, None)
+                    .await;
+
+                if tx_hex.is_err() {
+                    info!(
+                        message = "Failed to get raw transaction, skipping",
+                        tx_hash = utxo.txid.to_string()
+                    );
                     continue;
                 }
-                let tx = tx.unwrap();
-                let serialized_tx = consensus::encode::serialize_hex(&tx);
-                if !serialized_tx.contains(hex::encode(embedded_nonce).as_str()) {
+                let tx_hex = tx_hex.unwrap();
+                let tx_bytes = hex::decode(&tx_hex);
+                if tx_bytes.is_err() {
+                    info!(
+                        message = "Failed to decode raw transaction, skipping",
+                        tx_hash = utxo.txid.to_string()
+                    );
+                    continue;
+                }
+                let tx_bytes = tx_bytes.unwrap();
+                let tx = bitcoin::consensus::deserialize::<Transaction>(&tx_bytes).unwrap();
+
+                // Each tx can only have one of the following prefixed script pubkeys
+                // [OP_RETURN (0x6a) + OP_PUSHBYTES_16 (0x10)]
+                if tx
+                    .output
+                    .iter()
+                    .filter(|output| output.script_pubkey.to_bytes().starts_with(&[0x6a, 0x10]))
+                    .count()
+                    != 1
+                {
+                    // Either not a mm payment OR invalid payment that has multiple OP_RETURN outputs
+                    info!(
+                        message = "Invalid mm payment, either not a mm payment or invalid payment that has multiple OP_RETURN outputs",
+                        tx_hash = utxo.txid.to_string()
+                    );
+                    continue;
+                }
+
+                let mut needle = vec![0x6a, 0x10];
+                needle.extend_from_slice(&embedded_nonce);
+
+                if !tx
+                    .output
+                    .iter()
+                    .any(|output| output.script_pubkey.to_bytes() == needle)
+                {
+                    // The embedded nonce is not in the OP_RETURN output
+                    info!(
+                        message =
+                            "Invalid mm payment, embedded nonce is not in the OP_RETURN output",
+                        tx_hash = utxo.txid.to_string()
+                    );
+                    continue;
+                }
+                // finally validate fee
+                let fee = mm_payment.fee_amount;
+                let fee_address =
+                    Address::from_str(&otc_models::FEE_ADDRESSES_BY_CHAIN[&ChainType::Bitcoin])?
+                        .assume_checked();
+                if !tx.output.iter().any(|output| {
+                    output.script_pubkey == fee_address.script_pubkey()
+                        && output.value >= Amount::from_sat(fee.to::<u64>())
+                }) {
+                    // The fee is not in the OP_RETURN output
+                    info!(
+                        message = "Invalid mm payment, invalid fee amount or fee address",
+                        tx_hash = utxo.txid.to_string()
+                    );
                     continue;
                 }
             }

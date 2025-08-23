@@ -44,6 +44,29 @@ pub enum RFQRequest {
     },
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum RFQResult<T> {
+    Success(T),
+    /// Something the user couldn't do anything about (not relevant to show the user)
+    MakerUnavailable(String),
+    /// Something the user could do something about (relevant to show the user)
+    InvalidRequest(String),
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FeeSchedule {
+    pub network_fee_sats: u64,
+    pub liquidity_fee_sats: u64,
+    pub protocol_fee_sats: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct QuoteWithFees {
+    pub quote: Quote,
+    pub fees: FeeSchedule,
+}
+
 /// Messages sent from Market Maker to RFQ server
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
@@ -51,7 +74,7 @@ pub enum RFQResponse {
     /// MM's response with their quote (or None if they can't quote)
     QuoteResponse {
         request_id: Uuid,
-        quote: Option<Quote>,
+        quote: RFQResult<QuoteWithFees>,
         timestamp: DateTime<Utc>,
     },
 
