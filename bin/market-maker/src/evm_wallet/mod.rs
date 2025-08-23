@@ -88,7 +88,7 @@ impl EVMWallet {
 
 #[async_trait]
 impl Wallet for EVMWallet {
-    async fn create_transaction(
+    async fn create_payment(
         &self,
         lot: &Lot,
         to_address: &str,
@@ -203,7 +203,7 @@ fn create_evm_transfer_transaction(
                 }
                 false => vec![lot.amount],
             };
-            let transfer = token_contract.disperseToken(token_address, recipients, amounts);
+            let transfer = token_contract.disperseTokenSimple(token_address, recipients, amounts);
             let mut transaction_request = transfer.into_transaction_request();
 
             // Add nonce to the end of calldata if provided

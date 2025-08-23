@@ -214,7 +214,7 @@ async fn test_swap_from_bitcoin_to_ethereum(
         }
     };
     let tx_hash = user_bitcoin_wallet
-        .create_transaction(
+        .create_payment(
             &Lot {
                 currency: Currency {
                     chain: ChainType::Bitcoin,
@@ -304,6 +304,11 @@ async fn test_swap_from_ethereum_to_bitcoin(
             market_maker_account.ethereum_address,
             U256::from(100_000_000_000_000_000_000i128),
         )
+        .await
+        .unwrap();
+
+    user_ethereum_wallet
+        .ensure_inf_approval_on_disperse(devnet.ethereum.cbbtc_contract.address())
         .await
         .unwrap();
 
@@ -434,7 +439,7 @@ async fn test_swap_from_ethereum_to_bitcoin(
         }
     };
     let tx_hash = user_ethereum_wallet
-        .create_transaction(
+        .create_payment(
             &Lot {
                 currency: Currency {
                     chain: ChainType::Ethereum,

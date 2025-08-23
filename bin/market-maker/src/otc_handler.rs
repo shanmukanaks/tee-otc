@@ -143,7 +143,7 @@ impl OTCMessageHandler {
                 let response: MMResponse = {
                     if let Some(wallet) = wallet {
                         let tx_result = wallet
-                            .create_transaction(
+                            .create_payment(
                                 expected_lot,
                                 user_destination_address,
                                 Some(MarketMakerPaymentValidation {

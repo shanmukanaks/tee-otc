@@ -163,7 +163,7 @@ impl BitcoinWallet {
 
 #[async_trait]
 impl WalletTrait for BitcoinWallet {
-    async fn create_transaction(
+    async fn create_payment(
         &self,
         lot: &Lot,
         to_address: &str,

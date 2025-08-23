@@ -94,6 +94,11 @@ async fn test_evm_wallet_nonce_error_retry(
         &mut join_set,
     );
 
+    evm_wallet
+        .ensure_inf_approval_on_disperse(&test_token)
+        .await
+        .unwrap();
+
     // Subscribe to transaction status updates
     let mut status_receiver = evm_wallet.tx_broadcaster.subscribe_to_status_updates();
 
@@ -113,10 +118,10 @@ async fn test_evm_wallet_nonce_error_retry(
     let user_address = user_account.ethereum_address.to_string();
 
     // Send the first transaction normally
-    let tx1_future = evm_wallet.create_transaction(&lot, &user_address, None);
+    let tx1_future = evm_wallet.create_payment(&lot, &user_address, None);
 
     // Immediately send another transaction to create a nonce conflict
-    let tx2_future = evm_wallet.create_transaction(&lot, &user_address, None);
+    let tx2_future = evm_wallet.create_payment(&lot, &user_address, None);
 
     // Both transactions should eventually succeed due to retry logic
     let (tx1_result, tx2_result) = tokio::join!(tx1_future, tx2_future);
@@ -196,7 +201,7 @@ async fn test_evm_wallet_nonce_error_retry(
 
     let custom_nonce: [u8; 16] = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16];
     let tx_with_nonce = evm_wallet
-        .create_transaction(
+        .create_payment(
             &lot,
             &user_address,
             Some(MarketMakerPaymentValidation {
@@ -283,6 +288,11 @@ async fn test_evm_wallet_gas_price_bumping(
     let mut join_set = JoinSet::new();
     let evm_wallet = EVMWallet::new(provider.clone(), eth_rpc_url.to_string(), 1, &mut join_set);
 
+    evm_wallet
+        .ensure_inf_approval_on_disperse(test_token)
+        .await
+        .unwrap();
+
     // Monitor status updates to detect gas bumping
     let mut status_receiver = evm_wallet.tx_broadcaster.subscribe_to_status_updates();
 
@@ -301,9 +311,8 @@ async fn test_evm_wallet_gas_price_bumping(
     // we'll verify the retry logic exists and works
 
     let user_address = user_account.ethereum_address.to_string();
-    let tx_result = evm_wallet
-        .create_transaction(&lot, &user_address, None)
-        .await;
+    let tx_result = evm_wallet.create_payment(&lot, &user_address, None).await;
+    println!("tx_result: {:?}", tx_result);
 
     assert!(
         tx_result.is_ok(),
@@ -379,7 +388,7 @@ async fn test_evm_wallet_error_handling(
     };
 
     let result = evm_wallet
-        .create_transaction(&invalid_lot, "invalid_address", None)
+        .create_payment(&invalid_lot, "invalid_address", None)
         .await;
 
     assert!(result.is_err(), "Should fail with invalid address");

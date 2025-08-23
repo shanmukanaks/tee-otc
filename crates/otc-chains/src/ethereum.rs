@@ -14,6 +14,7 @@ use std::time::Duration;
 use tracing::{debug, info};
 
 sol! {
+    #[derive(Debug)]
     event Transfer(address indexed from, address indexed to, uint256 value);
 }
 
@@ -190,26 +191,41 @@ impl EthereumChain {
                 .await?;
 
             if transaction_receipt.is_none() {
+                debug!("Transaction receipt not found for transfer: {:?}", transfer);
                 continue;
             }
             let transaction_receipt = transaction_receipt.unwrap();
             if !transaction_receipt.status() {
+                debug!(
+                    "Transaction receipt not successful for transfer: {:?}",
+                    transfer
+                );
                 continue;
             }
 
             let intra_tx_transfers =
                 extract_all_transfers_from_transaction_receipt(&transaction_receipt);
+
             // TODO: There's a security issue with handling more than 1 swap per tx, so for now we force there to be no more than 2 transfers per tx (1 for the swap, 1 for the fee)
             if intra_tx_transfers.len() > 2 {
+                debug!("More than 2 transfers in transaction",);
+                for transfer_log in intra_tx_transfers {
+                    debug!("Transfer: {:?}", transfer_log);
+                }
                 continue;
             }
             for (index, transfer_log) in intra_tx_transfers.iter().enumerate() {
                 // validate the recipient
                 if transfer_log.to != *recipient_address {
+                    debug!(
+                        "Transfer recipient is not the expected address: {:?}",
+                        transfer
+                    );
                     continue;
                 }
                 // validate the amount
                 if transfer_log.value < *amount {
+                    debug!("Transfer amount is less than expected: {:?}", transfer);
                     continue;
                 }
                 // validate the embedded nonce
@@ -220,12 +236,17 @@ impl EthereumChain {
                         .get_raw_transaction_by_hash(transfer.transaction_hash)
                         .await?;
                     if transaction.is_none() {
+                        debug!("Transaction not found for transfer: {:?}", transfer);
                         continue;
                     }
                     let transaction = transaction.unwrap();
                     let tx_hex = alloy::hex::encode(transaction);
                     let nonce_hex = alloy::hex::encode(embedded_nonce);
                     if !tx_hex.contains(&nonce_hex) {
+                        debug!(
+                            "Transaction does not contain the expected nonce: {:?}",
+                            transfer
+                        );
                         continue;
                     }
 
@@ -257,6 +278,10 @@ impl EthereumChain {
                 if transfer_hint.is_some()
                     && transfer_hint.as_ref().unwrap().confirmations > confirmations
                 {
+                    debug!(
+                        "Transfer has more confirmations than the previous transfer hint: {:?}",
+                        transfer
+                    );
                     continue;
                 }
 

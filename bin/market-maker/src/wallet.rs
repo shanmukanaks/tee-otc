@@ -56,7 +56,7 @@ pub type Result<T, E = WalletError> = std::result::Result<T, E>;
 pub trait Wallet: Send + Sync {
     /// Create a transaction for the given currency to the specified address
     /// Optional nonce must be embedded in the transaction somehow
-    async fn create_transaction(
+    async fn create_payment(
         &self,
         lot: &Lot,
         to_address: &str,
@@ -126,7 +126,7 @@ mod tests {
 
     #[async_trait]
     impl Wallet for MockWallet {
-        async fn create_transaction(
+        async fn create_payment(
             &self,
             _lot: &Lot,
             _to_address: &str,
@@ -167,10 +167,7 @@ mod tests {
         let can_fill = wallet.can_fill(&lot).await.unwrap();
         assert!(can_fill);
 
-        let txid = wallet
-            .create_transaction(&lot, "bc1q...", None)
-            .await
-            .unwrap();
+        let txid = wallet.create_payment(&lot, "bc1q...", None).await.unwrap();
         assert_eq!(txid, "mock_txid_123");
 
         // Remove wallet

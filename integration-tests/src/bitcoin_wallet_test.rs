@@ -121,7 +121,7 @@ async fn test_bitcoin_wallet_basic_operations(
     };
 
     let invalid_tx_result = bitcoin_wallet
-        .create_transaction(&btc_lot, "invalid_bitcoin_address", None)
+        .create_payment(&btc_lot, "invalid_bitcoin_address", None)
         .await;
 
     assert!(
@@ -146,15 +146,15 @@ async fn test_bitcoin_wallet_basic_operations(
         .unwrap();
 
     let tx_result1 = bitcoin_wallet
-        .create_transaction(&btc_lot, &user_btc_address, None)
+        .create_payment(&btc_lot, &user_btc_address, None)
         .await;
     let tx_result2 = bitcoin_wallet
-        .create_transaction(&btc_lot, &user_btc_address, None)
+        .create_payment(&btc_lot, &user_btc_address, None)
         .await;
 
     let mm_nonce = hex!("deadbeefdeadbeefdeadbeefdeadbeef");
     let tx_result3 = bitcoin_wallet
-        .create_transaction(
+        .create_payment(
             &btc_lot,
             &user_btc_address,
             Some(MarketMakerPaymentValidation {
@@ -271,7 +271,7 @@ async fn test_bitcoin_wallet_error_handling(
     };
 
     let result = bitcoin_wallet
-        .create_transaction(&lot, "invalid_btc_address", None)
+        .create_payment(&lot, "invalid_btc_address", None)
         .await;
 
     assert!(result.is_err(), "Should fail with invalid address");
