@@ -1,5 +1,6 @@
 use crate::quote_storage::QuoteStorage;
 use crate::rfq_handler::RFQMessageHandler;
+use crate::wallet::WalletManager;
 use crate::{config::Config, wrapped_bitcoin_quoter::WrappedBitcoinQuoter};
 use futures_util::{SinkExt, StreamExt};
 use otc_rfq_protocol::{ProtocolMessage, RFQRequest};
@@ -49,11 +50,13 @@ impl RfqClient {
         rfq_ws_url: String,
         wrapped_bitcoin_quoter: WrappedBitcoinQuoter,
         quote_storage: Arc<QuoteStorage>,
+        wallet_manager: WalletManager,
     ) -> Self {
         let handler = RFQMessageHandler::new(
             config.market_maker_id.clone(),
             wrapped_bitcoin_quoter,
             quote_storage,
+            wallet_manager,
         );
         Self {
             config,

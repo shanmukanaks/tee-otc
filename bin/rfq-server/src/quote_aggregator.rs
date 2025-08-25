@@ -119,11 +119,16 @@ impl QuoteAggregator {
                 .max_by_key(|q| q.quote.from.amount),
         };
 
-        // Relevant fail quote
-        let best_invalid_request: Option<RFQResult<QuoteWithFees>> =
+        // Relevant fail quote - prioritize InvalidRequest over MakerUnavailable
+        let best_fail_quote: Option<RFQResult<QuoteWithFees>> =
             quotes.iter().find_map(|q| match q {
                 RFQResult::InvalidRequest(e) => Some(RFQResult::InvalidRequest(e.clone())),
                 _ => None,
+            }).or_else(|| {
+                quotes.iter().find_map(|q| match q {
+                    RFQResult::MakerUnavailable(e) => Some(RFQResult::MakerUnavailable(e.clone())),
+                    _ => None,
+                })
             });
 
         // Notify the winning market maker
@@ -153,7 +158,7 @@ impl QuoteAggregator {
         } else {
             Ok(QuoteRequestResult {
                 request_id,
-                best_quote: best_invalid_request,
+                best_quote: best_fail_quote,
                 total_quotes_received: total_quotes,
                 market_makers_contacted,
             })

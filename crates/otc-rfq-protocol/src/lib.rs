@@ -45,7 +45,7 @@ pub enum RFQRequest {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(tag = "type", rename_all = "snake_case")]
+#[serde(tag = "type", content = "data", rename_all = "snake_case")]
 pub enum RFQResult<T> {
     Success(T),
     /// Something the user couldn't do anything about (not relevant to show the user)

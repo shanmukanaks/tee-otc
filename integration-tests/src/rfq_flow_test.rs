@@ -24,6 +24,10 @@ async fn test_rfq_flow(_: PoolOptions<sqlx::Postgres>, connect_options: PgConnec
         .unwrap()
         .0;
 
+    // Don't fund the market maker - we want to test that it correctly rejects quotes
+    // when it has insufficient balance
+    println!("Market maker starting with 0 BTC balance");
+
     let mut join_set = JoinSet::new();
 
     // Get free ports for RFQ server and dummy OTC server port
@@ -53,6 +57,25 @@ async fn test_rfq_flow(_: PoolOptions<sqlx::Postgres>, connect_options: PgConnec
         &connect_options,
     )
     .await;
+
+    devnet
+        .ethereum
+        .fund_eth_address(
+            market_maker_account.ethereum_address,
+            U256::from(100_000_000_000_000_000_000i128),
+        )
+        .await
+        .unwrap();
+
+    devnet
+        .ethereum
+        .mint_cbbtc(
+            market_maker_account.ethereum_address,
+            U256::from(100_000_000), // 1 bitcoin in sats (cbbtc has 8 decimals)
+        )
+        .await
+        .unwrap();
+
     join_set.spawn(async move {
         run_market_maker(mm_args)
             .await
@@ -62,18 +85,19 @@ async fn test_rfq_flow(_: PoolOptions<sqlx::Postgres>, connect_options: PgConnec
     // Wait for market maker to connect to RFQ server
     wait_for_market_maker_to_connect_to_rfq_server(rfq_port).await;
 
-    let from_amount = U256::from(100000000u64);
+    // Test: Request for any amount when MM has no balance - should fail
+    let test_amount = U256::from(1_000_000_000); // 10 BTC in sats
 
-    // Now send a quote request
+    // Send a quote request (that will fail)
     let quote_request = QuoteRequest {
         mode: otc_models::QuoteMode::ExactOutput,
-        amount: from_amount,
-        from: Currency {
+        amount: test_amount,
+        to: Currency {
             chain: ChainType::Ethereum,
             token: TokenIdentifier::Address(devnet.ethereum.cbbtc_contract.address().to_string()),
             decimals: 8,
         },
-        to: Currency {
+        from: Currency {
             chain: ChainType::Bitcoin,
             token: TokenIdentifier::Native,
             decimals: 8,
@@ -96,41 +120,154 @@ async fn test_rfq_flow(_: PoolOptions<sqlx::Postgres>, connect_options: PgConnec
     // Calculate and record the latency
     let latency = start_time.elapsed();
 
-    assert_eq!(response.status(), 200, "Quote request should succeed");
+    assert_eq!(
+        response.status(),
+        200,
+        "Quote request should succeed at HTTP level"
+    );
 
     let quote_response: rfq_server::server::QuoteResponse = response
         .json()
         .await
         .expect("Should be able to parse quote response");
 
+    println!("quote_response: {:?}", quote_response);
+
     // Verify the response
     assert_eq!(
         quote_response.total_quotes_received, 1,
-        "Should receive 1 quote"
+        "Should receive 1 response from market maker"
     );
     assert_eq!(
         quote_response.market_makers_contacted, 1,
         "Should contact 1 market maker"
     );
 
-    // Verify the quote details
+    // Verify the quote is MakerUnavailable due to insufficient balance
     let quote = &quote_response.quote;
-    println!("Quote: {:?}", quote);
+    println!("Quote response for 0.1 BTC with 0 balance: {:?}", quote);
 
-    assert!(quote.is_some(), "Quote should be present");
+    assert!(quote.is_some(), "Quote response should be present");
     match quote.as_ref().unwrap() {
-        RFQResult::Success(quote) => {
-            assert_eq!(
-                quote.quote.market_maker_id.to_string(),
-                TEST_MARKET_MAKER_ID,
-                "Quote should be from our test market maker"
+        RFQResult::MakerUnavailable(reason) => {
+            assert!(
+                reason.contains("Insufficient balance"),
+                "Should indicate insufficient balance, got: {}",
+                reason
             );
+            println!("✓ Correctly rejected quote due to insufficient balance");
         }
-        _ => panic!("Quote should be a success"),
+        RFQResult::Success(_) => {
+            panic!("Quote should not succeed when market maker has insufficient balance");
+        }
+        RFQResult::InvalidRequest(reason) => {
+            panic!("Quote should not be invalid request, got: {}", reason);
+        }
     }
 
-    // Output the latency to get the quote
+    // Output the latency to get the response
     tracing::info!("Quote request latency: {:?}", latency);
 
-    println!("RFQ flow test completed successfully!");
+    // Now try for a quote that is barely too much
+    let test_amount = U256::from(100_000_000); // 1 BTC in sats
+    let quote_request = QuoteRequest {
+        mode: otc_models::QuoteMode::ExactOutput,
+        amount: test_amount,
+        to: Currency {
+            chain: ChainType::Ethereum,
+            token: TokenIdentifier::Address(devnet.ethereum.cbbtc_contract.address().to_string()),
+            decimals: 8,
+        },
+        from: Currency {
+            chain: ChainType::Bitcoin,
+            token: TokenIdentifier::Native,
+            decimals: 8,
+        },
+    };
+
+    let quote_request_url = format!("http://127.0.0.1:{rfq_port}/api/v1/quotes/request");
+    let client = reqwest::Client::new();
+
+    let response = client
+        .post(&quote_request_url)
+        .json(&quote_request)
+        .send()
+        .await
+        .expect("Should be able to send quote request");
+
+    let quote_response: rfq_server::server::QuoteResponse = response
+        .json()
+        .await
+        .expect("Should be able to parse quote response");
+
+    // Verify the quote is Success
+    let quote = &quote_response.quote;
+    println!("Quote response for {test_amount} BTC with 1 BTC balance: {quote:?}");
+
+    assert!(quote.is_some(), "Quote response should be present");
+    match quote.as_ref().unwrap() {
+        RFQResult::Success(quote) => {
+            panic!("Quote response for {test_amount} BTC with 1 BTC balance: {quote:?}");
+        }
+        RFQResult::MakerUnavailable(reason) => {
+            assert!(
+                reason.contains("Insufficient balance"),
+                "Should indicate insufficient balance, got: {reason}"
+            );
+            println!("✓ Correctly rejected quote due to insufficient balance");
+        }
+        RFQResult::InvalidRequest(reason) => {
+            panic!("Quote should not be invalid request, got: {reason}");
+        }
+    }
+
+    // finally try for an amount that is valid
+    let test_amount = U256::from(50_000_000); // 1 BTC in sats
+    let quote_request = QuoteRequest {
+        mode: otc_models::QuoteMode::ExactOutput,
+        amount: test_amount,
+        to: Currency {
+            chain: ChainType::Ethereum,
+            token: TokenIdentifier::Address(devnet.ethereum.cbbtc_contract.address().to_string()),
+            decimals: 8,
+        },
+        from: Currency {
+            chain: ChainType::Bitcoin,
+            token: TokenIdentifier::Native,
+            decimals: 8,
+        },
+    };
+
+    let quote_request_url = format!("http://127.0.0.1:{rfq_port}/api/v1/quotes/request");
+    let client = reqwest::Client::new();
+
+    let response = client
+        .post(&quote_request_url)
+        .json(&quote_request)
+        .send()
+        .await
+        .expect("Should be able to send quote request");
+
+    let quote_response: rfq_server::server::QuoteResponse = response
+        .json()
+        .await
+        .expect("Should be able to parse quote response");
+
+    let quote = &quote_response.quote;
+    println!("Quote response for {test_amount} BTC with 1 BTC balance: {quote:?}");
+
+    assert!(quote.is_some(), "Quote response should be present");
+    match quote.as_ref().unwrap() {
+        RFQResult::Success(quote) => {
+            println!("Correctly received success quote: {quote:?}");
+        }
+        RFQResult::MakerUnavailable(reason) => {
+            panic!("Quote should not be maker unavailable, got: {reason}");
+        }
+        RFQResult::InvalidRequest(reason) => {
+            panic!("Quote should not be invalid request, got: {reason}");
+        }
+    }
+
+    println!("RFQ flow test with balance check completed successfully!");
 }

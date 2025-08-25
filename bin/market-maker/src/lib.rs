@@ -239,7 +239,7 @@ pub async fn run_market_maker(args: MarketMakerArgs) -> Result<()> {
             reconnect_interval_secs: 5,
             max_reconnect_attempts: 5,
         },
-        wallet_manager,
+        wallet_manager.clone(),
         quote_storage.clone(),
     );
     join_set.spawn(async move { otc_fill_client.run().await.map_err(Error::from) });
@@ -257,6 +257,7 @@ pub async fn run_market_maker(args: MarketMakerArgs) -> Result<()> {
         args.rfq_ws_url,
         wrapped_bitcoin_quoter,
         quote_storage,
+        wallet_manager,
     );
     join_set.spawn(async move {
         rfq_client.run().await.map_err(|e| Error::Client {

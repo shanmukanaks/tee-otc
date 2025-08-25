@@ -6,12 +6,14 @@ use tracing::{debug, error, info, warn};
 use uuid::Uuid;
 
 use crate::quote_storage::QuoteStorage;
+use crate::wallet::WalletManager;
 use crate::wrapped_bitcoin_quoter::WrappedBitcoinQuoter;
 
 pub struct RFQMessageHandler {
     market_maker_id: Uuid,
     wrapped_bitcoin_quoter: WrappedBitcoinQuoter,
     quote_storage: Arc<QuoteStorage>,
+    wallet_manager: WalletManager,
 }
 
 impl RFQMessageHandler {
@@ -19,11 +21,13 @@ impl RFQMessageHandler {
         market_maker_id: Uuid,
         wrapped_bitcoin_quoter: WrappedBitcoinQuoter,
         quote_storage: Arc<QuoteStorage>,
+        wallet_manager: WalletManager,
     ) -> Self {
         Self {
             market_maker_id,
             wrapped_bitcoin_quoter,
             quote_storage,
+            wallet_manager,
         }
     }
 
@@ -50,7 +54,37 @@ impl RFQMessageHandler {
                     tracing::error!("Failed to compute quote: {:?}", quote.err());
                     return None;
                 }
-                let rfq_result = quote.unwrap();
+                let mut rfq_result = quote.unwrap();
+
+                // Check if we have sufficient balance to fulfill the quote
+                if let RFQResult::Success(ref quote_with_fees) = rfq_result {
+                    let wallet = self.wallet_manager.get(quote_with_fees.quote.to.currency.chain);
+                    
+                    let can_fill = if let Some(wallet) = wallet {
+                        match wallet.can_fill(&quote_with_fees.quote.to).await {
+                            Ok(can_fill) => can_fill,
+                            Err(e) => {
+                                warn!("Failed to check wallet balance: {}", e);
+                                false
+                            }
+                        }
+                    } else {
+                        warn!("No wallet configured for chain {:?}", quote_with_fees.quote.to.currency.chain);
+                        false
+                    };
+                    
+                    if !can_fill {
+                        info!(
+                            "Insufficient balance to fulfill quote {}: need {} on {:?}",
+                            quote_with_fees.quote.id,
+                            quote_with_fees.quote.to.amount,
+                            quote_with_fees.quote.to.currency.chain
+                        );
+                        rfq_result = RFQResult::MakerUnavailable(
+                            "Insufficient balance to fulfill quote".to_string()
+                        );
+                    }
+                }
 
                 let quote = match &rfq_result {
                     RFQResult::Success(quote) => Some(quote.quote.clone()),

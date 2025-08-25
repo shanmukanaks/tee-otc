@@ -3,7 +3,7 @@ pub mod transaction_broadcaster;
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use bdk_esplora::esplora_client;
+use bdk_esplora::{esplora_client, EsploraAsyncExt};
 use bdk_wallet::rusqlite::Connection;
 use bdk_wallet::{
     bitcoin::{self, Network},
@@ -86,6 +86,8 @@ pub enum BitcoinWalletError {
 pub struct BitcoinWallet {
     pub tx_broadcaster: transaction_broadcaster::BitcoinTransactionBroadcaster,
     wallet: Arc<Mutex<PersistedWallet<Connection>>>,
+    connection: Arc<Mutex<Connection>>,
+    esplora_client: Arc<esplora_client::AsyncClient>,
 }
 
 impl BitcoinWallet {
@@ -135,6 +137,13 @@ impl BitcoinWallet {
         let wallet = Arc::new(Mutex::new(wallet));
         let connection = Arc::new(Mutex::new(conn));
         let esplora_client = Arc::new(esplora_client);
+        
+        // Log the wallet's address for debugging
+        {
+            let mut wallet_guard = wallet.lock().await;
+            let address = wallet_guard.next_unused_address(bdk_wallet::KeychainKind::External);
+            info!("Bitcoin wallet initialized with address: {}", address);
+        }
 
         let tx_broadcaster = transaction_broadcaster::BitcoinTransactionBroadcaster::new(
             wallet.clone(),
@@ -147,15 +156,43 @@ impl BitcoinWallet {
         Ok(Self {
             tx_broadcaster,
             wallet,
+            connection,
+            esplora_client,
         })
     }
 
     async fn check_balance(&self, lot: &Lot) -> Result<bool, BitcoinWalletError> {
-        let wallet = self.wallet.lock().await;
+        // First sync the wallet to get the latest balance
+        let mut wallet = self.wallet.lock().await;
+        
+        // Do a full scan to get the latest balance from the blockchain
+        let request = wallet.start_full_scan().build();
+        let update = self.esplora_client
+            .full_scan(request, 10, 5)
+            .await
+            .map_err(|e| BitcoinWalletError::SyncWallet { source: e })?;
+        
+        wallet.apply_update(update)
+            .map_err(|_| BitcoinWalletError::ApplyUpdate)?;
+        
+        // Persist the updated wallet state
+        let mut conn = self.connection.lock().await;
+        wallet.persist(&mut conn)
+            .map_err(|e| BitcoinWalletError::PersistWallet { source: e })?;
+        drop(conn);
+        
         let balance = wallet.balance();
+        info!("Bitcoin lot is valid: {:?}", lot);
 
         let amount_sats = lot.amount.to::<u64>();
         let required_balance = balance_with_buffer(amount_sats);
+        
+        info!(
+            "Bitcoin balance check: wallet_balance={} sats, required={} sats, required_with_buffer={} sats",
+            balance.total().to_sat(),
+            amount_sats,
+            required_balance
+        );
 
         Ok(balance.total().to_sat() > required_balance)
     }
