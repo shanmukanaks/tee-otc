@@ -1,6 +1,6 @@
 use chrono::Utc;
 use otc_models::{Currency, Lot, Quote};
-use otc_rfq_protocol::{ProtocolMessage, RFQRequest, RFQResponse, RFQResult};
+use otc_protocols::rfq::{ProtocolMessage, RFQRequest, RFQResponse, RFQResult};
 use std::sync::Arc;
 use tracing::{debug, error, info, warn};
 use uuid::Uuid;

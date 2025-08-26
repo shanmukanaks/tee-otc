@@ -10,7 +10,7 @@ use market_maker::evm_wallet::EVMWallet;
 use market_maker::wallet::Wallet;
 use market_maker::{bitcoin_wallet::BitcoinWallet, run_market_maker, MarketMakerArgs};
 use otc_models::{ChainType, Currency, Lot, Quote, QuoteMode, QuoteRequest, TokenIdentifier};
-use otc_rfq_protocol::RFQResult;
+use otc_protocols::rfq::RFQResult;
 use otc_server::api::SwapResponse;
 use otc_server::{
     api::{CreateSwapRequest, CreateSwapResponse},

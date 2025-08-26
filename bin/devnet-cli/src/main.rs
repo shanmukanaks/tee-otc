@@ -1,5 +1,5 @@
 use clap::{Parser, Subcommand};
-use common::{handle_background_thread_result, init_logger};
+use blockchain_utils::{handle_background_thread_result, init_logger};
 use devnet::evm_devnet::ForkConfig;
 use devnet::{RiftDevnet, RiftDevnetCache};
 use snafu::{ResultExt, Whatever};

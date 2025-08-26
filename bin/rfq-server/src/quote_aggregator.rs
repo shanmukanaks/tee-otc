@@ -1,7 +1,7 @@
 use crate::mm_registry::RfqMMRegistry;
 use futures_util::future;
 use otc_models::{Quote, QuoteMode, QuoteRequest};
-use otc_rfq_protocol::{QuoteWithFees, RFQResponse, RFQResult};
+use otc_protocols::rfq::{QuoteWithFees, RFQResponse, RFQResult};
 use snafu::Snafu;
 use std::sync::Arc;
 use tokio::sync::mpsc;

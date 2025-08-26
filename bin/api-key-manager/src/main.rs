@@ -3,7 +3,7 @@ use argon2::{
     Argon2, Params, Version,
 };
 use clap::{Parser, Subcommand};
-use common::init_logger;
+use blockchain_utils::init_logger;
 use dialoguer::Input;
 use otc_models::ApiKey;
 use rand::{distributions::Alphanumeric, rngs::OsRng, Rng};

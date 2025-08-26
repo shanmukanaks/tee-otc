@@ -5,7 +5,7 @@ pub mod evm_devnet;
 pub mod token_indexerd;
 
 pub use bitcoin_devnet::BitcoinDevnet;
-use common::P2WPKHBitcoinWallet;
+use blockchain_utils::P2WPKHBitcoinWallet;
 pub use evm_devnet::EthDevnet;
 
 use evm_devnet::ForkConfig;

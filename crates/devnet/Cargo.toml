@@ -18,7 +18,7 @@ fs2 = { workspace = true }
 serde = { workspace = true }
 chrono = { workspace = true }
 dirs = { workspace = true }
-common = {workspace = true}
+blockchain-utils = {workspace = true}
 bip39 = {workspace = true}
 snafu = {workspace = true}
 reqwest = {workspace = true}

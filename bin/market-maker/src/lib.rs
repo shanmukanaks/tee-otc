@@ -16,7 +16,7 @@ use std::{str::FromStr, sync::Arc};
 use alloy::{primitives::Address, providers::Provider};
 use bdk_wallet::bitcoin;
 use clap::Parser;
-use common::{create_websocket_wallet_provider, handle_background_thread_result};
+use blockchain_utils::{create_websocket_wallet_provider, handle_background_thread_result};
 use config::Config;
 use otc_models::ChainType;
 use snafu::{prelude::*, ResultExt};
@@ -46,7 +46,7 @@ pub enum Error {
     GenericWallet { source: wallet::WalletError },
 
     #[snafu(display("Provider error: {}", source))]
-    Provider { source: common::ProviderError },
+    Provider { source: blockchain_utils::ProviderError },
 
     #[snafu(display("Esplora client error: {}", source))]
     EsploraInitialization { source: esplora_client::Error },
@@ -62,8 +62,8 @@ pub enum Error {
     },
 }
 
-impl From<common::ProviderError> for Error {
-    fn from(error: common::ProviderError) -> Self {
+impl From<blockchain_utils::ProviderError> for Error {
+    fn from(error: blockchain_utils::ProviderError) -> Self {
         Error::Provider { source: error }
     }
 }

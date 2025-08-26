@@ -1,5 +1,5 @@
 use dashmap::DashMap;
-use otc_mm_protocol::{MMRequest, ProtocolMessage};
+use otc_protocols::mm::{MMRequest, ProtocolMessage};
 use otc_models::{ChainType, Lot};
 use snafu::Snafu;
 use std::sync::Arc;

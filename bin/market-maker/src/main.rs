@@ -1,5 +1,5 @@
 use clap::Parser;
-use common::init_logger;
+use blockchain_utils::init_logger;
 use market_maker::{run_market_maker, MarketMakerArgs};
 
 #[tokio::main]

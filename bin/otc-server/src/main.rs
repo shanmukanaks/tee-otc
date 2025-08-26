@@ -1,5 +1,5 @@
 use clap::Parser;
-use common::init_logger;
+use blockchain_utils::init_logger;
 use otc_server::{server::run_server,  OtcServerArgs, Result};
 
 

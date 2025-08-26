@@ -3,9 +3,9 @@ use crate::strategy::ValidationStrategy;
 use crate::{config::Config, wallet::WalletManager};
 use alloy::primitives::U256;
 use chrono::Utc;
-use common::FeeCalcFromLot;
+use blockchain_utils::FeeCalcFromLot;
 use otc_chains::traits::MarketMakerPaymentValidation;
-use otc_mm_protocol::{MMErrorCode, MMRequest, MMResponse, MMStatus, ProtocolMessage};
+use otc_protocols::mm::{MMErrorCode, MMRequest, MMResponse, MMStatus, ProtocolMessage};
 use std::sync::Arc;
 use tracing::{error, info, warn};
 

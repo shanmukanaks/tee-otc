@@ -6,7 +6,7 @@ use std::{
 };
 
 use bitcoincore_rpc_async::Auth;
-use common::create_websocket_wallet_provider;
+use blockchain_utils::create_websocket_wallet_provider;
 use ctor::ctor;
 use devnet::MultichainAccount;
 use market_maker::{evm_wallet::EVMWallet, MarketMakerArgs};

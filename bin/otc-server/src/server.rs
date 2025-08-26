@@ -18,7 +18,7 @@ use axum::{
 use futures_util::{SinkExt, StreamExt};
 use otc_auth::ApiKeyStore;
 use otc_chains::{bitcoin::BitcoinChain, ethereum::EthereumChain, ChainRegistry};
-use otc_mm_protocol::{Connected, MMRequest, MMResponse, ProtocolMessage};
+use otc_protocols::mm::{Connected, MMRequest, MMResponse, ProtocolMessage};
 use serde::{Deserialize, Serialize};
 use snafu::prelude::*;
 use std::{net::SocketAddr, sync::Arc};

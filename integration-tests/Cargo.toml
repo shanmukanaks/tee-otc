@@ -23,11 +23,11 @@ tracing = {workspace =true}
 evm-token-indexer-client = {workspace = true}
 bitcoincore-rpc-async = {workspace = true}
 bitcoin = {workspace = true}
-common = {workspace = true}
+blockchain-utils = {workspace = true}
 otc-models = {workspace = true}
 uuid = {workspace= true}
 rfq-server ={workspace= true}
 serde = {workspace = true}
 chrono = {workspace=true}
-otc-rfq-protocol = {workspace = true}
+otc-protocols = {workspace = true}
 otc-chains = {workspace=true}

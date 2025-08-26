@@ -14,7 +14,7 @@ path = "src/main.rs"
 [dependencies]
 otc-models = { workspace = true }
 otc-auth = { path = "../../crates/otc-auth" }
-otc-rfq-protocol = { path = "../../crates/otc-rfq-protocol" }
+otc-protocols = { workspace = true }
 
 tokio = { workspace = true }
 serde = { workspace = true }

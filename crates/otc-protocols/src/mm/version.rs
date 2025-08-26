@@ -1,4 +1,4 @@
-use crate::errors::{ProtocolResult, ProtocolError};
+use super::errors::{ProtocolResult, ProtocolError};
 use serde::{Deserialize, Serialize};
 
 /// Current protocol version

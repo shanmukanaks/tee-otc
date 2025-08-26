@@ -9,7 +9,7 @@ use alloy::{
     rpc::types::TransactionRequest,
 };
 use async_trait::async_trait;
-use common::{GenericERC20::GenericERC20Instance, WebsocketWalletProvider};
+use blockchain_utils::{GenericERC20::GenericERC20Instance, WebsocketWalletProvider};
 use disperse_contract::Disperse::DisperseInstance;
 use otc_chains::traits::MarketMakerPaymentValidation;
 use otc_models::{ChainType, Currency, Lot, TokenIdentifier};

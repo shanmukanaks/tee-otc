@@ -1,6 +1,6 @@
 use dashmap::DashMap;
 use otc_models::QuoteRequest;
-use otc_rfq_protocol::{ProtocolMessage, RFQRequest, RFQResponse};
+use otc_protocols::rfq::{ProtocolMessage, RFQRequest, RFQResponse};
 use snafu::Snafu;
 use std::sync::Arc;
 use tokio::sync::mpsc;

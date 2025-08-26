@@ -12,10 +12,10 @@ name = "otc-server"
 path = "src/main.rs"
 
 [dependencies]
-common = { workspace = true }
+blockchain-utils = { workspace = true }
 otc-models = { workspace = true, features = ["sqlx"] }
 otc-chains = { workspace = true }
-otc-mm-protocol = { workspace = true }
+otc-protocols = { workspace = true }
 otc-auth = { path = "../../crates/otc-auth" }
 
 tokio = { workspace = true }

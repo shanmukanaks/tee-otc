@@ -17,10 +17,9 @@ repository = "https://github.com/riftresearch/tee-otc"
 # Internal dependencies
 otc-models = { path = "crates/otc-models" }
 otc-chains = { path = "crates/otc-chains" }
-otc-mm-protocol = { path = "crates/otc-mm-protocol" }
-otc-rfq-protocol = { path = "crates/otc-rfq-protocol" }
+otc-protocols = { path = "crates/otc-protocols" }
 rfq-server = {path = "bin/rfq-server"}
-common = { path = "crates/common" }
+blockchain-utils = { path = "crates/blockchain-utils" }
 devnet = { path = "crates/devnet" }
 evm-token-indexer-client = { path = "crates/evm-token-indexer-client" }
 otc-server = {path = "bin/otc-server"}

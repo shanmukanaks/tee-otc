@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use common::{
+use blockchain_utils::{
     create_websocket_wallet_provider,
     GenericERC20::{self, GenericERC20Instance},
 };

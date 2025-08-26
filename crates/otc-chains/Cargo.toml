@@ -16,7 +16,7 @@ tracing = { workspace = true }
 async-trait = {workspace = true}
 chrono = {workspace = true}
 
-common = {workspace=true}
+blockchain-utils = {workspace=true}
 
 # Bitcoin dependencies
 bitcoin = {workspace = true}

@@ -3,7 +3,7 @@ use crate::error::OtcServerError;
 use crate::{config::Settings, services::mm_registry};
 use alloy::primitives::U256;
 use chrono::Utc;
-use common::FeeCalcFromLot;
+use blockchain_utils::FeeCalcFromLot;
 use otc_chains::traits::MarketMakerPaymentValidation;
 use otc_chains::ChainRegistry;
 use otc_models::{MMDepositStatus, Swap, SwapStatus, TxStatus, UserDepositStatus};

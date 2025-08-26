@@ -16,7 +16,7 @@ use axum::{
 use futures_util::{SinkExt, StreamExt};
 use otc_auth::ApiKeyStore;
 use otc_models::{Currency, Lot, Quote, QuoteRequest};
-use otc_rfq_protocol::{
+use otc_protocols::rfq::{
     Connected, ProtocolMessage, QuoteWithFees, RFQRequest, RFQResponse, RFQResult,
 };
 use serde::{Deserialize, Serialize};

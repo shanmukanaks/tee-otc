@@ -6,7 +6,7 @@ use alloy::rpc::types::TransactionReceipt;
 use alloy::signers::local::PrivateKeySigner;
 use alloy::sol;
 use async_trait::async_trait;
-use common::inverse_compute_protocol_fee;
+use blockchain_utils::inverse_compute_protocol_fee;
 use evm_token_indexer_client::TokenIndexerClient;
 use otc_models::{ChainType, Lot, TokenIdentifier, TransferInfo, TxStatus, Wallet};
 use std::str::FromStr;

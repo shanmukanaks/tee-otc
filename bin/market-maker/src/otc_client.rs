@@ -2,7 +2,7 @@ use crate::otc_handler::OTCMessageHandler;
 use crate::quote_storage::QuoteStorage;
 use crate::{config::Config, wallet::WalletManager};
 use futures_util::{SinkExt, StreamExt};
-use otc_mm_protocol::{MMRequest, ProtocolMessage};
+use otc_protocols::mm::{MMRequest, ProtocolMessage};
 use snafu::prelude::*;
 use std::sync::Arc;
 use tokio::time::{sleep, Duration};

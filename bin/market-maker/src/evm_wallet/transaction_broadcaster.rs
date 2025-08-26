@@ -8,7 +8,7 @@ use alloy::{
     },
     transports::RpcError,
 };
-use common::WebsocketWalletProvider;
+use blockchain_utils::WebsocketWalletProvider;
 use snafu::{prelude::*, ResultExt};
 use std::sync::Arc;
 use tokio::{

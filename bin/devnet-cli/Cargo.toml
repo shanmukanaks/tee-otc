@@ -16,4 +16,4 @@ alloy = {workspace = true}
 tracing-subscriber = {workspace = true}
 snafu = {workspace = true}
 tracing = {workspace = true}
-common = {workspace = true}
+blockchain-utils = {workspace = true}

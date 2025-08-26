@@ -1,16 +1,15 @@
 use alloy::primitives::U256;
 use market_maker::run_market_maker;
-use otc_models::{ChainType, Currency, Lot, QuoteRequest, TokenIdentifier};
-use otc_rfq_protocol::RFQResult;
+use otc_models::{ChainType, Currency, QuoteRequest, TokenIdentifier};
+use otc_protocols::rfq::RFQResult;
 use rfq_server::server::run_server as run_rfq_server;
 use sqlx::{pool::PoolOptions, postgres::PgConnectOptions};
-use std::time::{Duration, Instant};
+use std::time::Instant;
 use tokio::task::JoinSet;
 
 use crate::utils::{
     build_mm_test_args, build_rfq_server_test_args, get_free_port,
     wait_for_market_maker_to_connect_to_rfq_server, wait_for_rfq_server_to_be_ready,
-    INTEGRATION_TEST_TIMEOUT_SECS, TEST_MARKET_MAKER_ID,
 };
 
 #[sqlx::test]
@@ -131,7 +130,7 @@ async fn test_rfq_flow(_: PoolOptions<sqlx::Postgres>, connect_options: PgConnec
         .await
         .expect("Should be able to parse quote response");
 
-    println!("quote_response: {:?}", quote_response);
+    println!("quote_response: {quote_response:?}");
 
     // Verify the response
     assert_eq!(
@@ -145,15 +144,14 @@ async fn test_rfq_flow(_: PoolOptions<sqlx::Postgres>, connect_options: PgConnec
 
     // Verify the quote is MakerUnavailable due to insufficient balance
     let quote = &quote_response.quote;
-    println!("Quote response for 0.1 BTC with 0 balance: {:?}", quote);
+    println!("Quote response for 0.1 BTC with 0 balance: {quote:?}");
 
     assert!(quote.is_some(), "Quote response should be present");
     match quote.as_ref().unwrap() {
         RFQResult::MakerUnavailable(reason) => {
             assert!(
                 reason.contains("Insufficient balance"),
-                "Should indicate insufficient balance, got: {}",
-                reason
+                "Should indicate insufficient balance, got: {reason}"
             );
             println!("✓ Correctly rejected quote due to insufficient balance");
         }
@@ -161,12 +159,12 @@ async fn test_rfq_flow(_: PoolOptions<sqlx::Postgres>, connect_options: PgConnec
             panic!("Quote should not succeed when market maker has insufficient balance");
         }
         RFQResult::InvalidRequest(reason) => {
-            panic!("Quote should not be invalid request, got: {}", reason);
+            panic!("Quote should not be invalid request, got: {reason}");
         }
     }
 
     // Output the latency to get the response
-    tracing::info!("Quote request latency: {:?}", latency);
+    tracing::info!("Quote request latency: {latency:?}");
 
     // Now try for a quote that is barely too much
     let test_amount = U256::from(100_000_000); // 1 BTC in sats

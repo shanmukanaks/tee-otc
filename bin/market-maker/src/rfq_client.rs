@@ -3,7 +3,7 @@ use crate::rfq_handler::RFQMessageHandler;
 use crate::wallet::WalletManager;
 use crate::{config::Config, wrapped_bitcoin_quoter::WrappedBitcoinQuoter};
 use futures_util::{SinkExt, StreamExt};
-use otc_rfq_protocol::{ProtocolMessage, RFQRequest};
+use otc_protocols::rfq::{ProtocolMessage, RFQRequest};
 use snafu::prelude::*;
 use std::sync::Arc;
 use tokio::time::{sleep, Duration};
